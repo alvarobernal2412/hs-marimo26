@@ -1,0 +1,84 @@
+name: release
+
+# Tag `vMAJOR.MINOR.PATCH` (or run this by hand with a version) to build everything students need and leave it as a DRAFT release.
+# Students and their launchers only see it once you press "Publish release" on GitHub.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, MAJOR.MINOR.PATCH (for example 1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-x64, runner: windows-latest }
+          - { os: macos-arm64, runner: macos-15 }
+          - { os: macos-x64, runner: macos-15-intel }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Download the big datasets (release "datasets")
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download datasets --dir data-dl --pattern "*.xes"
+      - name: Build the zip
+        shell: bash
+        env:
+          RAW: ${{ inputs.version || github.ref_name }}
+        run: python build/build_runtime.py --os ${{ matrix.os }} --data-dir data-dl --out out --version "${RAW#v}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zip-${{ matrix.os }}
+          path: out/*.zip
+          compression-level: 0
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: zip-*
+          merge-multiple: true
+          path: out
+      - name: Zip the notebooks (what running launchers fetch)
+        run: python build/make_notebooks_zip.py --out out/notebooks.zip
+      - name: Draft the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RAW: ${{ inputs.version || github.ref_name }}
+        run: |
+          V="${RAW#v}"
+          cat > notes.md <<EOF
+          Course notebooks $V.
+
+          **Students:** download the zip for your computer, unzip it, and start it (see README-students.md inside).
+          - Windows: \`hs-marimo26-v$V-windows-x64.zip\`
+          - Mac with an Apple chip (M1 or newer): \`hs-marimo26-v$V-macos-arm64.zip\`
+          - Mac with an Intel chip: \`hs-marimo26-v$V-macos-x64.zip\`
+
+          \`notebooks.zip\` is not for students: running copies fetch it by themselves.
+          EOF
+          if gh release view "v$V" >/dev/null 2>&1; then
+            gh release upload "v$V" out/* --clobber
+          else
+            gh release create "v$V" out/* --draft --title "v$V" --notes-file notes.md --target "$GITHUB_SHA"
+          fi
