@@ -43,3 +43,49 @@ def test_running_instance_detected_from_state_file(tmp_path):
 
 def test_no_state_file_means_not_running(tmp_path):
     assert start.running_port(tmp_path) is None
+
+
+# ---- consent ---------------------------------------------------------------------------------------------------------------
+import consent  # noqa: E402
+import pytest  # noqa: E402
+
+
+def _must_not_ask(state):
+    raise AssertionError("the consent page must not be shown")
+
+
+def test_resolve_consent_uses_saved_answer_without_asking(tmp_path):
+    consent.save(tmp_path, "accepted")
+    assert start.resolve_consent(tmp_path, force=False, ask=_must_not_ask) == "accepted"
+
+
+def test_resolve_consent_asks_when_unanswered(tmp_path):
+    assert start.resolve_consent(tmp_path, force=False, ask=lambda state: "declined") == "declined"
+
+
+def test_resolve_consent_force_asks_again(tmp_path):
+    consent.save(tmp_path, "accepted")
+    assert start.resolve_consent(tmp_path, force=True, ask=lambda state: "declined") == "declined"
+
+
+@pytest.mark.parametrize("choice", ["accepted", "declined", "undecided"])
+@pytest.mark.parametrize("preset", [None, "https://example.org/sync"])
+def test_marimo_env_blanks_sync_url_unless_accepted(tmp_path, choice, preset):
+    base = {"PATH": "x"} if preset is None else {"PATH": "x", "PMPROV_SYNC_URL": preset}
+    env = start.marimo_env(base, tmp_path, choice)
+    assert env["PMPROV_DIR"] == str(tmp_path / "provenance")
+    assert env["PYTHONNOUSERSITE"] == "1"
+    assert env["PATH"] == "x"
+    if choice == "accepted":
+        assert env.get("PMPROV_SYNC_URL") == preset  # untouched: unset stays unset, a preset stays
+    else:
+        assert env["PMPROV_SYNC_URL"] == ""
+    assert base.get("PMPROV_SYNC_URL") == preset  # the caller's environment is not modified
+
+
+def test_main_does_not_ask_for_consent_when_the_server_already_runs(tmp_path, monkeypatch):
+    monkeypatch.setattr(start, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(start, "running_port", lambda state: 2718)
+    monkeypatch.setattr(start.webbrowser, "open", lambda url: True)
+    monkeypatch.setattr(consent, "ask", _must_not_ask)
+    assert start.main(tmp_path) == 0

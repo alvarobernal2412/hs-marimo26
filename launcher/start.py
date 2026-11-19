@@ -10,6 +10,7 @@ import webbrowser
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import consent  # noqa: E402
 import update  # noqa: E402
 
 PREFERRED_PORT = 2718
@@ -50,6 +51,21 @@ def running_port(state: Path) -> int | None:
         return None
 
 
+def resolve_consent(state: Path, force: bool, ask=consent.ask) -> str:
+    """The student's answer: the saved one, or (first start, a changed consent text, or `--consent`) the one the page collects."""
+    saved = None if force else consent.load(state)
+    return saved if saved is not None else ask(state)
+
+
+def marimo_env(base: dict, state: Path, choice: str) -> dict:
+    """The environment of the notebooks server. Unless the student accepted, the sync URL is blank: the notebooks then work
+    without the course server and keep everything on this computer."""
+    env = {**base, "PMPROV_DIR": str(Path(state) / "provenance"), "PYTHONNOUSERSITE": "1"}  # only the bundle's own packages
+    if choice != "accepted":
+        env["PMPROV_SYNC_URL"] = ""
+    return env
+
+
 def wait_until_listening(port: int, seconds: int = 120) -> bool:
     deadline = time.time() + seconds
     while time.time() < deadline:
@@ -69,9 +85,10 @@ def main(root: Path) -> int:
         webbrowser.open(f"http://localhost:{already}")
         return 0
     update.main(root)
+    choice = resolve_consent(state, force="--consent" in sys.argv[2:])
     port = free_port()
     remember_port(state, port)
-    env = {**os.environ, "PMPROV_DIR": str(state / "provenance"), "PYTHONNOUSERSITE": "1"}  # only the bundle's own packages
+    env = marimo_env(os.environ, state, choice)
     print(f"Starting the notebooks at http://localhost:{port} (close this window to stop them)")
     process = subprocess.Popen(build_command(root, port), env=env)
     if wait_until_listening(port):
