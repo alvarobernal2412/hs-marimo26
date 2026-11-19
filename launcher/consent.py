@@ -50,8 +50,9 @@ PAGE_HTML = """<!doctype html>
   details { margin: .8rem 0 1.4rem; }
   summary { cursor: pointer; color: #2563eb; }
   details ul { line-height: 1.5; padding-left: 1.2rem; }
-  .buttons { display: flex; gap: .8rem; flex-wrap: wrap; }
-  button { font: inherit; font-weight: 600; padding: .8rem 1.3rem; min-width: 12rem; border-radius: 10px; cursor: pointer;
+  .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }  /* equal columns: both choices the same size */
+  @media (max-width: 30rem) { .buttons { grid-template-columns: 1fr; } }
+  button { font: inherit; font-weight: 600; padding: .8rem 1.3rem; border-radius: 10px; cursor: pointer;
            border: 2px solid #2563eb; }
   #accept { background: #2563eb; color: #fff; }
   #accept:hover { background: #1d4ed8; }
