@@ -1,7 +1,10 @@
-"""Brings the notebooks of a student bundle up to date from the GitHub Releases of this repository.
+"""Brings the notebooks of a student bundle up to date from the latest GitHub Release of this repository.
 
 Standard library only: it runs with the bundled Python before anything else starts. Every failure is swallowed: the student
 must always be able to start with the notebooks they already have.
+
+Versions are `MAJOR.MINOR.PATCH`. The bundle holds one (`version.json`). A release with the same MAJOR only changes the notebooks,
+so it is applied; a newer MAJOR changes the package itself (Python, libraries, data folder), so the student is told to download it.
 """
 from __future__ import annotations
 
@@ -17,14 +20,21 @@ from pathlib import Path
 REPO = "alvarobernal2412/hs-marimo26"
 KEEP = ("data", "provenance")  # folders under notebooks/ that an update never touches
 TIMEOUT = 15
+Version = tuple[int, int, int]
 
 
-def read_version(root: Path) -> dict:
+def parse_version(text: str) -> Version | None:
+    """`v1.2.3` or `1.2.3` as (1, 2, 3); None for anything else."""
+    match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", str(text).strip())
+    return (int(match[1]), int(match[2]), int(match[3])) if match else None
+
+
+def read_version(root: Path) -> Version:
     try:
         found = json.loads((Path(root) / "version.json").read_text(encoding="utf8"))
-        return {"runtime": int(found.get("runtime", 0)), "notebooks": int(found.get("notebooks", 0))}
-    except (OSError, ValueError):
-        return {"runtime": 0, "notebooks": 0}
+        return parse_version(found["version"]) or (0, 0, 0)
+    except (OSError, ValueError, KeyError):
+        return (0, 0, 0)
 
 
 def urlopen_json(url: str):
@@ -40,33 +50,27 @@ def download_to(url: str, dest) -> None:
 
 
 def latest_release(repo: str = REPO, fetch=urlopen_json) -> dict | None:
-    """The newest `notebooks-N` release as `{notebooks, zip_url, min_runtime}`, or None (also on any error)."""
+    """The latest published release as `{version, zip_url}`, or None (also on any error). Drafts and pre-releases never count."""
     try:
-        best = None
-        for item in fetch(f"https://api.github.com/repos/{repo}/releases"):
-            match = re.fullmatch(r"notebooks-(\d+)", item.get("tag_name", ""))
-            asset = next((a for a in item.get("assets", []) if a.get("name") == "notebooks.zip"), None)
-            if not match or not asset or (best and int(match[1]) <= best["notebooks"]):
-                continue
-            try:
-                min_runtime = int(json.loads(item.get("body") or "{}").get("min_runtime", 0))
-            except ValueError:
-                min_runtime = 0
-            best = {"notebooks": int(match[1]), "zip_url": asset["browser_download_url"], "min_runtime": min_runtime}
-        return best
+        item = fetch(f"https://api.github.com/repos/{repo}/releases/latest")
+        version = parse_version(item.get("tag_name", ""))
+        asset = next((a for a in item.get("assets", []) if a.get("name") == "notebooks.zip"), None)
+        if version is None or asset is None:
+            return None
+        return {"version": version, "zip_url": asset["browser_download_url"]}
     except Exception:
         return None
 
 
 def apply_release(root: Path, release: dict, download=download_to) -> str:
-    """One of "updated", "current", "needs-runtime", "failed". The notebooks folder changes only after the whole zip checked out."""
+    """One of "updated", "current", "needs-package", "failed". The notebooks folder changes only after the whole zip checked out."""
     root = Path(root)
-    version = read_version(root)
-    if release["notebooks"] <= version["notebooks"]:
+    installed, wanted = read_version(root), release["version"]
+    if wanted <= installed:
         return "current"
-    if release["min_runtime"] > version["runtime"]:
-        print("A newer version of the notebooks needs a new download of this package. Please download it again from the course page.")
-        return "needs-runtime"
+    if wanted[0] != installed[0]:
+        print("A new version of the course package is available. Please download it again from the course page.")
+        return "needs-package"
     try:
         with tempfile.TemporaryDirectory() as tmp:
             archive = Path(tmp) / "notebooks.zip"
@@ -87,7 +91,7 @@ def apply_release(root: Path, release: dict, download=download_to) -> str:
                 elif destination.exists():
                     destination.unlink()
                 shutil.move(str(item), destination)
-        (root / "version.json").write_text(json.dumps({**version, "notebooks": release["notebooks"]}), encoding="utf8")
+        (root / "version.json").write_text(json.dumps({"version": ".".join(map(str, wanted))}), encoding="utf8")
         return "updated"
     except Exception:
         return "failed"
