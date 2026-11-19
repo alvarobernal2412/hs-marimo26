@@ -5,18 +5,26 @@ The course notebooks as a package students run on their own laptop: no Docker, n
 - `notebooks/`: `lecture.py`, `initial-analysis.py`, `map-explorer.py` and what they share (`bpm_kit.py`, `lib/`, `data/`). `marimo run`
   serves them as a gallery of apps. The Dhana log is read from `data/dhana-loan-application-molab.xes`.
 - `launcher/`: `Start.bat` / `Start.command` (at the package root), `start.py` (update, start marimo, open the browser), `update.py`.
-- `build/`: `build_runtime.py` makes the per-OS student zip, `make_notebooks_zip.py` the notebooks update.
-- `.github/workflows/`: `runtime.yml` (manual) builds the three student zips; `notebooks.yml` publishes a notebooks update on a tag.
+- `build/`: `build_runtime.py` makes the per-OS student zip, `make_notebooks_zip.py` the `notebooks.zip` of a release.
+- `.github/workflows/release.yml`: on a `v*` tag, builds the three student zips and `notebooks.zip` and drafts the release.
 
 ## Releases
-| Release | What | When |
-|---|---|---|
-| `data-1` | the two Dhana `.xes` (too big for git), uploaded by hand | once, or when the logs change |
-| `runtime-N` | `hs-marimo26-<os>-runtime<N>.zip` for windows-x64, macos-arm64, macos-x64: what students download | when packages change (`build/requirements.txt`) |
-| `notebooks-N` | `notebooks.zip`: the update every launcher fetches on start | tag `notebooks-N` after changing `notebooks/` |
 
-`build/min_runtime.txt` is the runtime number a notebooks release needs. Raise it only when `notebooks/` needs new packages: students on
-an older runtime are told to download the package again and keep the notebooks they have.
+One version, `vMAJOR.MINOR.PATCH`, and one link for students: `https://github.com/alvarobernal2412/hs-marimo26/releases/latest`.
+A release holds the three student zips (`hs-marimo26-v<version>-windows-x64.zip`, `-macos-arm64.zip`, `-macos-x64.zip`) and
+`notebooks.zip`, which running copies fetch by themselves when they start.
+
+| Bump | When | What students do |
+|---|---|---|
+| MAJOR | the package changes: Python, libraries, the data folder | download the new zip (their launcher tells them) |
+| MINOR or PATCH | only `notebooks/` changes | nothing: it updates on the next start |
+
+To release: `git tag v1.1.0 && git push origin v1.1.0` (or run the *release* workflow by hand with a version). CI builds everything and
+leaves a **draft**. Download the zips from the draft and try them, then press **Publish release**: only then do students and launchers
+see it. A launcher applies the latest release when it has the same MAJOR as the copy it started from.
+
+The two Dhana `.xes` logs are too big for git. They live as files of the release tagged `datasets` (replace the files there when
+the logs change); the build puts them into every student zip, together with a `.csv` made from the parquet the notebooks read.
 
 Students' own files stay outside the package: `~/.hs-marimo26/` (work saved without a key) and the key's session folder in the temp
 directory (the course server holds the real copy). The updater never touches `notebooks/data/` or `notebooks/provenance/`.
