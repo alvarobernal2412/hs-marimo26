@@ -22,7 +22,7 @@ import temporal_characteristics_util as tcu
 CASE_ID = "case_concept_name"
 ACTIVITY = "concept_name"
 TIMESTAMP = "time_timestamp"
-DHANA = "data/dhana-loan-application-molab.xes"
+DHANA = "data/dhana-loan-application.parquet"  # the same log as the .xes next to it, 100 times faster to read
 HISTORY_NAME = "Dhana loan application initial analysis"
 MAP_EXPLORER_HISTORY_NAME = "Dhana loan application map explorer"
 
@@ -41,7 +41,7 @@ def _is_timestamp(series: pd.Series) -> bool:
 
 
 def load_event_log(path) -> pd.DataFrame:
-    """The Dhana log: the `.xes` (keys already the notebooks' column names) or a `.parquet` of it."""
+    """The Dhana log, from its `.parquet` (what the notebooks use) or from the `.xes` of it (keys already the notebooks' column names)."""
     path = Path(path)
     if path.suffix.lower() == ".xes":
         from xes_reader import read_xes
