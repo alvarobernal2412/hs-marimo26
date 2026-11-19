@@ -32,7 +32,7 @@ def free_port(preferred: int = PREFERRED_PORT) -> int:
 
 
 def build_command(root: Path, port: int, python: str | None = None) -> list[str]:
-    return [python or sys.executable, "-m", "marimo", "run", str(Path(root) / "notebooks"), "--headless", "--port", str(port)]
+    return [python or sys.executable, "-s", "-m", "marimo", "run", str(Path(root) / "notebooks"), "--headless", "--port", str(port)]
 
 
 def remember_port(state: Path, port: int) -> None:
@@ -71,7 +71,7 @@ def main(root: Path) -> int:
     update.main(root)
     port = free_port()
     remember_port(state, port)
-    env = {**os.environ, "PMPROV_DIR": str(state / "provenance")}
+    env = {**os.environ, "PMPROV_DIR": str(state / "provenance"), "PYTHONNOUSERSITE": "1"}  # only the bundle's own packages
     print(f"Starting the notebooks at http://localhost:{port} (close this window to stop them)")
     process = subprocess.Popen(build_command(root, port), env=env)
     if wait_until_listening(port):

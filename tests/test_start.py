@@ -28,6 +28,7 @@ def test_command_keeps_paths_with_spaces_and_non_ascii_as_single_arguments(tmp_p
     assert str(root / "notebooks") in command
     assert command[command.index("--port") + 1] == "2718"
     assert "--headless" in command
+    assert command[1] == "-s"  # the bundle never reads packages from the student's user site
 
 
 def test_running_instance_detected_from_state_file(tmp_path):

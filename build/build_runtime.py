@@ -95,7 +95,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         python_dir = download_python(TARGETS[args.os], Path(tmp))
         interpreter = python_dir / ("python.exe" if args.os == "windows-x64" else "bin/python3")
-        subprocess.run([str(interpreter), "-m", "pip", "install", "--no-warn-script-location", "-r", str(repo / "build" / "requirements.txt")], check=True)
+        subprocess.run([str(interpreter), "-s", "-m", "pip", "install", "--no-warn-script-location", "-r", str(repo / "build" / "requirements.txt")], check=True)
         print(assemble(repo, python_dir, args.data_dir, args.out, args.os, args.runtime, args.notebooks))
     return 0
 
