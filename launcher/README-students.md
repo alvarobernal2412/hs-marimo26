@@ -14,7 +14,7 @@ and comes back whenever you use the same key, on any computer.
 ## If something stops working
 - A red message ("Failed to fetch", "Unauthorized", lost connection) or a page that does not respond: **reload the page**. Your work
   comes back as you left it. If the key is asked again, paste it again.
-- Loading the Dhana event log takes about a minute. Wait for "events loaded".
+- The first start on a computer can take a minute or two (it prepares itself once). After that it starts in seconds.
 - Closed the black window by mistake? Start it again.
 
 ## Updates
@@ -22,5 +22,7 @@ Each time you start, the package fetches the latest notebooks by itself when you
 download this package again if the black window tells you so.
 
 ## The event logs
-The folder `notebooks/data` holds the event logs (also for opening in other tools such as Disco):
-`dhana-loan-application.xes`, `dhana-loan-application-molab.xes`, `Purchasing-Example.csv`, `SepsisCases2020EventLog.xes`.
+The folder `notebooks/data` holds the event logs, in the formats other tools read:
+- Dhana loan application: `dhana-loan-application.xes`, `dhana-loan-application-molab.xes`, `dhana-loan-application.csv`
+  (the notebooks themselves read `dhana-loan-application.parquet`, the same log in a format that loads in seconds).
+- `Purchasing-Example.csv`, `SepsisCases2020EventLog.xes`.
