@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_render_version_json():
-    assert json.loads(br.render_version_json(3, 7)) == {"runtime": 3, "notebooks": 7}
+    assert json.loads(br.render_version_json("1.2.3")) == {"version": "1.2.3"}
 
 
 def test_find_python_asset_picks_install_only_for_target():
@@ -32,10 +32,10 @@ def test_layout_has_expected_paths_and_zip(tmp_path):
     data.mkdir()
     (data / "dhana-loan-application-molab.xes").write_text("X")
     out = tmp_path / "out"
-    zip_path = br.assemble(ROOT, python_dir, data, out, os_name="windows-x64", runtime=1, notebooks=1)
+    zip_path = br.assemble(ROOT, python_dir, data, out, os_name="windows-x64", version="1.2.3")
     with zipfile.ZipFile(zip_path) as z:
         names = set(z.namelist())
-    assert zip_path.name == "hs-marimo26-windows-x64-runtime1.zip"
+    assert zip_path.name == "hs-marimo26-v1.2.3-windows-x64.zip"
     for expected in ("Start.bat", "python/python.exe", "launcher/start.py", "launcher/update.py", "version.json",
                      "notebooks/lecture.py", "notebooks/data/dhana-loan-application-molab.xes"):
         assert expected in names, expected

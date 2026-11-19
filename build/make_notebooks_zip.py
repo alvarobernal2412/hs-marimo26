@@ -1,4 +1,4 @@
-"""Zips the notebooks folder for a `notebooks-N` release: without the big `.xes` logs, caches and anything a student produced."""
+"""Zips the notebooks folder for a release: without the big `.xes` logs, caches and anything a student produced."""
 from __future__ import annotations
 
 import argparse

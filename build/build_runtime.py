@@ -1,7 +1,7 @@
 """Builds the student zip of one operating system: standalone Python 3.13 + pinned packages + launcher + notebooks + datasets.
 
 Run it on the operating system it builds for (the packages are installed with that system's own pip):
-    python build/build_runtime.py --os windows-x64 --data-dir DATA --out OUT [--runtime 1] [--notebooks 1]
+    python build/build_runtime.py --os windows-x64 --data-dir DATA --out OUT --version 1.0.0
 """
 from __future__ import annotations
 
@@ -22,8 +22,8 @@ LAUNCHER_AT_ROOT = {"windows-x64": "Start.bat", "macos-arm64": "Start.command", 
 RELEASES = "https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest"
 
 
-def render_version_json(runtime: int, notebooks: int) -> str:
-    return json.dumps({"runtime": runtime, "notebooks": notebooks})
+def render_version_json(version: str) -> str:
+    return json.dumps({"version": version})
 
 
 def find_python_asset(release: dict, target: str) -> str:
@@ -34,10 +34,10 @@ def find_python_asset(release: dict, target: str) -> str:
     raise LookupError(f"no Python 3.13 build for {target}")
 
 
-def assemble(repo: Path, python_dir: Path, data_dir: Path, out_dir: Path, os_name: str, runtime: int, notebooks: int) -> Path:
+def assemble(repo: Path, python_dir: Path, data_dir: Path, out_dir: Path, os_name: str, version: str) -> Path:
     """Lays the bundle out and zips it; returns the zip's path."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    zip_path = out_dir / f"hs-marimo26-{os_name}-runtime{runtime}.zip"
+    zip_path = out_dir / f"hs-marimo26-v{version}-{os_name}.zip"
     entries: list[tuple[Path, str, int]] = []  # (file, name in zip, unix mode)
 
     def add_tree(source: Path, prefix: str) -> None:
@@ -68,7 +68,7 @@ def assemble(repo: Path, python_dir: Path, data_dir: Path, out_dir: Path, os_nam
             info.compress_type = zipfile.ZIP_DEFLATED
             with open(file, "rb") as src, z.open(info, "w", force_zip64=True) as dst:
                 shutil.copyfileobj(src, dst, 1024 * 1024)
-        z.writestr("version.json", render_version_json(runtime, notebooks))
+        z.writestr("version.json", render_version_json(version))
     return zip_path
 
 
@@ -94,8 +94,7 @@ def main() -> int:
     parser.add_argument("--os", required=True, choices=sorted(TARGETS))
     parser.add_argument("--data-dir", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
-    parser.add_argument("--runtime", type=int, default=1)
-    parser.add_argument("--notebooks", type=int, default=1)
+    parser.add_argument("--version", required=True, help="MAJOR.MINOR.PATCH, as in the release tag without the v")
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[1]
     with tempfile.TemporaryDirectory() as tmp:
@@ -108,7 +107,7 @@ def main() -> int:
         for file in Path(args.data_dir).glob("*"):
             shutil.copy(file, datasets / file.name)
         export_csv(interpreter, repo / "notebooks" / "data" / "dhana-loan-application.parquet", datasets / "dhana-loan-application.csv")
-        print(assemble(repo, python_dir, datasets, args.out, args.os, args.runtime, args.notebooks))
+        print(assemble(repo, python_dir, datasets, args.out, args.os, args.version))
     return 0
 
 
