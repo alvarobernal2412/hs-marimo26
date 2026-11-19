@@ -1,0 +1,25 @@
+name: notebooks release
+
+# Tag `notebooks-N` to publish a notebooks update; running students' launchers pick it up on their next start.
+on:
+  push:
+    tags: ["notebooks-*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python build/make_notebooks_zip.py --out notebooks.zip
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "{\"min_runtime\": $(cat build/min_runtime.txt)}" > notes.json
+          gh release create "$GITHUB_REF_NAME" notebooks.zip --title "$GITHUB_REF_NAME" --notes-file notes.json
