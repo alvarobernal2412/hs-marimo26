@@ -36,7 +36,7 @@ def test_layout_has_expected_paths_and_zip(tmp_path):
     with zipfile.ZipFile(zip_path) as z:
         names = set(z.namelist())
     assert zip_path.name == "hs-marimo26-v1.2.3-windows-x64.zip"
-    for expected in ("Start.bat", "python/python.exe", "launcher/start.py", "launcher/update.py", "version.json",
+    for expected in ("Start.bat", "python/python.exe", "launcher/start.py", "launcher/update.py", "launcher/consent.py", "version.json",
                      "notebooks/lecture.py", "notebooks/data/dhana-loan-application-molab.xes"):
         assert expected in names, expected
     assert "Start.command" not in names

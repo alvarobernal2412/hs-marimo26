@@ -48,7 +48,7 @@ def assemble(repo: Path, python_dir: Path, data_dir: Path, out_dir: Path, os_nam
 
     add_tree(python_dir, "python")
     add_tree(repo / "notebooks", "notebooks")
-    for name in ("start.py", "update.py"):
+    for name in ("start.py", "update.py", "consent.py"):
         entries.append((repo / "launcher" / name, f"launcher/{name}", 0o644))
     launcher = LAUNCHER_AT_ROOT[os_name]
     entries.append((repo / "launcher" / launcher, launcher, 0o755))
