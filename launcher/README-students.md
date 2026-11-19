@@ -11,6 +11,14 @@
 `initial-analysis` and `map-explorer` ask for the **key** your teachers gave you. Paste it once. Your work is saved under it
 and comes back whenever you use the same key, on any computer.
 
+## Sharing your analyses (optional)
+The first time you start, a page asks whether your analyses may be shared with the course, anonymised: only the analysis steps you
+run, not your clicks. They are used to improve the course and for research on tools that support exploratory analysis. You answer once
+and are not asked again. If you say no, everything works the same; your work just stays on your computer.
+
+To change your mind, start again with `--consent`: on Windows open a terminal in this folder and run `Start.bat --consent`; on Mac
+run `./Start.command --consent` in Terminal.
+
 ## If something stops working
 - A red message ("Failed to fetch", "Unauthorized", lost connection) or a page that does not respond: **reload the page**. Your work
   comes back as you left it. If the key is asked again, paste it again.
