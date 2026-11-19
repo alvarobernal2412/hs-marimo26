@@ -68,6 +68,13 @@ def test_resolve_consent_force_asks_again(tmp_path):
     assert start.resolve_consent(tmp_path, force=True, ask=lambda state: "declined") == "declined"
 
 
+def test_resolve_consent_never_blocks_the_start_when_the_page_fails(tmp_path):
+    def broken(state):
+        raise OSError("cannot open a port")
+
+    assert start.resolve_consent(tmp_path, force=False, ask=broken) == "undecided"
+
+
 @pytest.mark.parametrize("choice", ["accepted", "declined", "undecided"])
 @pytest.mark.parametrize("preset", [None, "https://example.org/sync"])
 def test_marimo_env_blanks_sync_url_unless_accepted(tmp_path, choice, preset):

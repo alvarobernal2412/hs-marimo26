@@ -54,7 +54,12 @@ def running_port(state: Path) -> int | None:
 def resolve_consent(state: Path, force: bool, ask=consent.ask) -> str:
     """The student's answer: the saved one, or (first start, a changed consent text, or `--consent`) the one the page collects."""
     saved = None if force else consent.load(state)
-    return saved if saved is not None else ask(state)
+    if saved is not None:
+        return saved
+    try:
+        return ask(state)
+    except Exception:  # like the updater: whatever goes wrong, the student can still start (local-only, asked again next time)
+        return "undecided"
 
 
 def marimo_env(base: dict, state: Path, choice: str) -> dict:
