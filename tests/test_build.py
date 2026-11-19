@@ -40,3 +40,13 @@ def test_layout_has_expected_paths_and_zip(tmp_path):
                      "notebooks/lecture.py", "notebooks/data/dhana-loan-application-molab.xes"):
         assert expected in names, expected
     assert "Start.command" not in names
+
+
+def test_export_csv_writes_the_log_with_its_columns(tmp_path):
+    import pandas as pd
+
+    parquet = tmp_path / "log.parquet"
+    pd.DataFrame({"case_concept_name": ["A1", "A2"], "concept_name": ["x", "y"]}).to_parquet(parquet)
+    out = tmp_path / "log.csv"
+    br.export_csv(Path(sys.executable), parquet, out)
+    assert out.read_text(encoding="utf8").splitlines() == ["case_concept_name,concept_name", "A1,x", "A2,y"]

@@ -72,6 +72,12 @@ def assemble(repo: Path, python_dir: Path, data_dir: Path, out_dir: Path, os_nam
     return zip_path
 
 
+def export_csv(interpreter: Path, parquet: Path, out: Path) -> None:
+    """Writes the Dhana log as a `.csv` next to its `.xes`, for the tools that read neither parquet nor the notebooks' loader."""
+    code = "import sys, pandas as pd; pd.read_parquet(sys.argv[1]).to_csv(sys.argv[2], index=False)"
+    subprocess.run([str(interpreter), "-s", "-c", code, str(parquet), str(out)], check=True)
+
+
 def download_python(target: str, dest: Path) -> Path:
     with urllib.request.urlopen(urllib.request.Request(RELEASES, headers={"User-Agent": "hs-marimo26"}), timeout=60) as response:
         url = find_python_asset(json.load(response), target)
@@ -96,7 +102,13 @@ def main() -> int:
         python_dir = download_python(TARGETS[args.os], Path(tmp))
         interpreter = python_dir / ("python.exe" if args.os == "windows-x64" else "bin/python3")
         subprocess.run([str(interpreter), "-s", "-m", "pip", "install", "--no-warn-script-location", "-r", str(repo / "build" / "requirements.txt")], check=True)
-        print(assemble(repo, python_dir, args.data_dir, args.out, args.os, args.runtime, args.notebooks))
+        # the datasets of the zip: the big .xes from the data release, plus the csv made from the parquet the notebooks use
+        datasets = Path(tmp) / "datasets"
+        datasets.mkdir()
+        for file in Path(args.data_dir).glob("*"):
+            shutil.copy(file, datasets / file.name)
+        export_csv(interpreter, repo / "notebooks" / "data" / "dhana-loan-application.parquet", datasets / "dhana-loan-application.csv")
+        print(assemble(repo, python_dir, datasets, args.out, args.os, args.runtime, args.notebooks))
     return 0
 
 
