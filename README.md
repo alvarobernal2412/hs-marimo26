@@ -2,7 +2,7 @@
 
 The course notebooks as a package students run on their own laptop: no Docker, no install, no terminal.
 
-- `notebooks/`: `lecture.py`, `initial-analysis.py`, `map-explorer.py` and what they share (`bpm_kit.py`, `lib/`, `data/`). `marimo run`
+- `notebooks/`: `00_lecture.py`, `01_initial-analysis.py`, `02_map-explorer.py` and what they share (`bpm_kit.py`, `lib/`, `data/`). `marimo run`
   serves them as a gallery of apps. The Dhana log is read from `data/dhana-loan-application-molab.xes`.
 - `launcher/`: `Start.bat` / `Start.command` (at the package root: unpack the runtime on the first start, then run `start.py`),
   `Change-my-answer.bat` / `.command` (the same with `--consent`), `start.py` (update, ask for consent, start marimo, open the browser),
@@ -18,6 +18,8 @@ The course notebooks as a package students run on their own laptop: no Docker, n
 - Windows runs python.org's embeddable Python (its `python.exe` is signed by the Python Software Foundation; the unsigned
   python-build-standalone one is blocked by managed laptops' Defender policy, "Access is denied"); Mac keeps python-build-standalone.
   The build smoke-tests the built Python (`SMOKE_MODULES`) before it zips anything.
+- The notebooks are numbered (`00_`, `01_`, `02_`) so the gallery lists them in course order. The notebook ids the course server knows
+  them by (`initial-analysis`, `map-explorer` in `lib/initial_analysis_kit.py`) are unchanged: they name students' saved work.
 - A student who said no to sharing has no course server in the analyst notebooks however they were started (`ak.course_server` reads
   `~/.hs-marimo26/consent.json`), not only through the launcher.
 - `build/`: `build_runtime.py` makes the per-OS student zip, `make_notebooks_zip.py` the `notebooks.zip` of a release.
