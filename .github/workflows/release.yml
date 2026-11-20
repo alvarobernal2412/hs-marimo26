@@ -38,6 +38,7 @@ jobs:
         shell: bash
         env:
           RAW: ${{ inputs.version || github.ref_name }}
+          GITHUB_TOKEN: ${{ github.token }}  # the runner's shared address is rate limited for anonymous API calls
         run: python build/build_runtime.py --os ${{ matrix.os }} --data-dir data-dl --out out --version "${RAW#v}"
       - uses: actions/upload-artifact@v4
         with:

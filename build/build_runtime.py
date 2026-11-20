@@ -7,12 +7,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
 import tarfile
 import tempfile
+import time
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -78,9 +81,24 @@ def export_csv(interpreter: Path, parquet: Path, out: Path) -> None:
     subprocess.run([str(interpreter), "-s", "-c", code, str(parquet), str(out)], check=True)
 
 
+def github_json(url: str, token: str | None = None, attempts: int = 3, sleep=time.sleep, opener=urllib.request.urlopen):
+    """A GitHub API answer. Sends the token when there is one (the unauthenticated limit is 60 calls an hour per address, which CI
+    runners share) and retries, waiting longer each time, when GitHub says it is rate limited or has a hiccup."""
+    headers = {"User-Agent": "hs-marimo26", "Accept": "application/vnd.github+json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    for attempt in range(attempts):
+        try:
+            with opener(urllib.request.Request(url, headers=headers), timeout=60) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as problem:
+            if problem.code not in (403, 429, 500, 502, 503) or attempt == attempts - 1:
+                raise
+            sleep(5 * 2**attempt)
+
+
 def download_python(target: str, dest: Path) -> Path:
-    with urllib.request.urlopen(urllib.request.Request(RELEASES, headers={"User-Agent": "hs-marimo26"}), timeout=60) as response:
-        url = find_python_asset(json.load(response), target)
+    url = find_python_asset(github_json(RELEASES, token=os.environ.get("GITHUB_TOKEN")), target)
     archive = dest / "python.tar.gz"
     with urllib.request.urlopen(url, timeout=600) as response, open(archive, "wb") as out:
         shutil.copyfileobj(response, out)
