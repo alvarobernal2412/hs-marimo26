@@ -86,6 +86,17 @@ on a Mac, next to Start). On a Mac, the first time, do the same "Open Anyway" st
 If the notebooks are running, close their window first. The page then asks again.
 
 
+REMOVING EVERYTHING
+-------------------
+To remove the course tools and your saved work from this computer, double-click "Uninstall" (Uninstall.bat on Windows,
+Uninstall.command on a Mac, next to Start). Close the notebooks' window first. It shows what will be deleted and what that
+means for your work, and goes ahead only when you type YES.
+- If you shared your analyses with the course server, that copy stays there: Uninstall does not remove it. Enter the same key
+  after a new setup and your work comes back. Ask your teachers if you want the server copy deleted too.
+- If you did not share them, they exist only on this computer and are lost for good.
+- The folder with Start in it stays: delete it yourself when you no longer need it.
+
+
 IF SOMETHING GOES WRONG
 -----------------------
 - A red message ("Failed to fetch", "Unauthorized", lost connection), or a page that does not respond:
