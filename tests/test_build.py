@@ -192,6 +192,47 @@ def test_student_readme_has_no_terminal_instructions():
     assert "Documents" not in text  # the zip is small now and unpacks itself elsewhere; no folder advice that points into OneDrive
 
 
+def test_python_org_embed_picks_the_newest_patch_that_has_windows_binaries():
+    asked = []
+
+    def exists(url):
+        asked.append(url)
+        return "3.13.17" in url
+
+    version, url = br.find_python_org_embed(exists, newest_patch=19)
+    assert version == "3.13.17"
+    assert url == "https://www.python.org/ftp/python/3.13.17/python-3.13.17-embed-amd64.zip"
+    assert [u.split("/")[5] for u in asked] == ["3.13.19", "3.13.18", "3.13.17"]  # newest first, stops at the first hit
+
+
+def test_python_org_embed_gives_up_when_no_patch_has_binaries():
+    with pytest.raises(LookupError):
+        br.find_python_org_embed(lambda url: False, newest_patch=3)
+
+
+def test_embed_pth_names_site_packages_and_enables_site(tmp_path):
+    (tmp_path / "python314._pth").write_text("python314.zip\n.\n#import site\n")
+    br.write_embed_pth(tmp_path)
+    assert (tmp_path / "python314._pth").read_text().splitlines() == ["python314.zip", ".", r"Lib\site-packages", "import site"]
+
+
+def test_windows_build_uses_the_signed_python_org_python_and_the_others_the_standalone(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(br, "download_python_org", lambda dest: calls.append("python.org") or dest / "python")
+    monkeypatch.setattr(br, "download_standalone", lambda target, dest: calls.append(target) or dest / "python")
+    br.download_python(br.TARGETS["windows-x64"], tmp_path)
+    br.download_python(br.TARGETS["macos-arm64"], tmp_path)
+    assert calls == ["python.org", "aarch64-apple-darwin"]
+
+
+def test_smoke_test_passes_for_importable_modules_and_fails_for_missing_ones():
+    import subprocess
+
+    br.smoke_test(Path(sys.executable), modules=("json", "zipfile"))
+    with pytest.raises(subprocess.CalledProcessError):
+        br.smoke_test(Path(sys.executable), modules=("no_such_module_for_the_smoke_test",))
+
+
 def test_start_command_unpacks_once_with_tar_and_passes_flags():
     text = (ROOT / "launcher" / "Start.command").read_text(encoding="utf8")
     for expected in ("Library/Application Support/hs-marimo26/runtime", "package-id.txt", "ready-", "/usr/bin/tar -xzf", '"$@"'):
