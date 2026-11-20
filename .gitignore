@@ -1,3 +1,4 @@
 notebooks/data/dhana-loan-application*.xes
 __pycache__/
 *.pyc
+notebooks/__marimo__/
