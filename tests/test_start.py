@@ -110,3 +110,23 @@ def test_main_refuses_to_change_the_answer_while_the_notebooks_run(tmp_path, mon
     monkeypatch.setattr(consent, "ask", _must_not_ask)
     assert start.main(tmp_path) == 1
     assert "Close the black window first, then double-click Change-my-answer again." in capsys.readouterr().out
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="job objects are a Windows feature")
+def test_the_server_dies_with_the_launcher_so_nothing_stays_running_in_the_background():
+    import ctypes
+    import subprocess
+
+    server = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+    try:
+        job = start.tie_to_this_process(server)
+        assert job and server.poll() is None
+        ctypes.windll.kernel32.CloseHandle(job)  # what Windows does when the launcher ends, however it ends
+        assert server.wait(timeout=15) is not None
+    finally:
+        server.kill()
+
+
+def test_tying_the_server_to_the_launcher_does_nothing_off_windows(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert start.tie_to_this_process(object()) is None
