@@ -18,6 +18,9 @@ The course notebooks as a package students run on their own laptop: no Docker, n
 - Windows runs python.org's embeddable Python (its `python.exe` is signed by the Python Software Foundation; the unsigned
   python-build-standalone one is blocked by managed laptops' Defender policy, "Access is denied"); Mac keeps python-build-standalone.
   The build smoke-tests the built Python (`SMOKE_MODULES`) before it zips anything.
+- `package-id.txt` is the version plus `-<first 7 characters of the commit>` (CI passes `--build-id`): a computer that already unpacked
+  that id does not unpack again, so the same version published again needs a new id to reach it. `version.json` inside the runtime keeps
+  the plain version, which is what the updater compares.
 - macOS puts a "quarantine" flag on every file of a download, and then refuses each native file of the unpacked tools ("library load
   disallowed by system policy", one dialog per file). `Start.command` clears it (`xattr -dr com.apple.quarantine`, no administrator
   rights) on the downloaded folder before unpacking, on the unpacked runtime, and on an installed runtime that still has it. The release

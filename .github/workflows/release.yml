@@ -39,7 +39,7 @@ jobs:
         env:
           RAW: ${{ inputs.version || github.ref_name }}
           GITHUB_TOKEN: ${{ github.token }}  # the runner's shared address is rate limited for anonymous API calls
-        run: python build/build_runtime.py --os ${{ matrix.os }} --data-dir data-dl --out out --version "${RAW#v}"
+        run: python build/build_runtime.py --os ${{ matrix.os }} --data-dir data-dl --out out --version "${RAW#v}" --build-id "${GITHUB_SHA::7}"
       - name: Check the Mac package opens without macOS prompts (the quarantine flag of a download)
         if: runner.os == 'macOS'
         shell: bash

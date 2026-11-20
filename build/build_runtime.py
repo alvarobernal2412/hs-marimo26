@@ -103,15 +103,19 @@ def add_to_zip(z: zipfile.ZipFile, file: Path, name: str, mode: int, compress_ty
         shutil.copyfileobj(src, dst, 1024 * 1024)
 
 
-def assemble(repo: Path, python_dir: Path, data_dir: Path, out_dir: Path, os_name: str, version: str) -> Path:
-    """Builds the student zip: a few loose files plus ONE runtime archive; returns the zip's path."""
+def assemble(repo: Path, python_dir: Path, data_dir: Path, out_dir: Path, os_name: str, version: str, build_id: str = "") -> Path:
+    """Builds the student zip: a few loose files plus ONE runtime archive; returns the zip's path.
+
+    `package-id.txt` says which build this is: the version, plus `-<build_id>` when there is one. A computer that already unpacked a
+    package with that id does not unpack it again, so a version published again (the same number, new contents) needs a new id to
+    reach it. The runtime's own `version.json` keeps the plain version, which is what the updater compares."""
     out_dir.mkdir(parents=True, exist_ok=True)
     zip_path = out_dir / f"hs-marimo26-v{version}-{os_name}.zip"
     with tempfile.TemporaryDirectory() as tmp:
         runtime = Path(tmp) / RUNTIME_ARCHIVE[os_name]
         write_runtime_archive(collect_runtime(repo, python_dir, data_dir), version, runtime)
         package_id = Path(tmp) / "package-id.txt"
-        package_id.write_text(version + "\n", encoding="utf8")
+        package_id.write_text((f"{version}-{build_id}" if build_id else version) + "\n", encoding="utf8")
         launcher = repo / "launcher"
         loose: list[Entry] = [(launcher / script, script, 0o755) for script in ROOT_SCRIPTS[os_name]]
         loose += [(launcher / name, f"launcher/{name}", 0o644) for name in ("start.py", "update.py", "consent.py")]
@@ -220,6 +224,7 @@ def main() -> int:
     parser.add_argument("--data-dir", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--version", required=True, help="MAJOR.MINOR.PATCH, as in the release tag without the v")
+    parser.add_argument("--build-id", default="", help="what tells this build from another of the same version, such as a commit's first 7 characters")
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[1]
     with tempfile.TemporaryDirectory() as tmp:
@@ -233,7 +238,7 @@ def main() -> int:
         for file in Path(args.data_dir).glob("*"):
             shutil.copy(file, datasets / file.name)
         export_csv(interpreter, repo / "notebooks" / "data" / "dhana-loan-application.parquet", datasets / "dhana-loan-application.csv")
-        print(assemble(repo, python_dir, datasets, args.out, args.os, args.version))
+        print(assemble(repo, python_dir, datasets, args.out, args.os, args.version, args.build_id))
     return 0
 
 
