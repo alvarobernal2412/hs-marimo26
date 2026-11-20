@@ -158,3 +158,8 @@ def test_url_is_printed_when_the_browser_cannot_open(tmp_path, capsys):
     asked = Asked(tmp_path, browser_opens=False, timeout=0.3)
     asked.finish()
     assert asked.url in capsys.readouterr().out
+
+
+def test_page_points_to_change_my_answer_not_to_a_flag():
+    assert "Change-my-answer" in consent.PAGE_HTML
+    assert "--consent" not in consent.PAGE_HTML  # students never open a terminal
