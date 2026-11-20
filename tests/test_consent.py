@@ -163,3 +163,9 @@ def test_url_is_printed_when_the_browser_cannot_open(tmp_path, capsys):
 def test_page_points_to_change_my_answer_not_to_a_flag():
     assert "Change-my-answer" in consent.PAGE_HTML
     assert "--consent" not in consent.PAGE_HTML  # students never open a terminal
+
+def test_decline_sits_left_of_accept_and_accept_keeps_the_focus():
+    html = consent.PAGE_HTML
+    assert html.index('id="decline"') < html.index('id="accept"')  # decline first (left), accept last (right), in one row
+    assert 'id="accept" autofocus' in html  # the focus is still on accept, whichever side it is on
+    assert "#accept { order: -1; }" in html  # stacked on a narrow screen, accept comes first, as the main choice

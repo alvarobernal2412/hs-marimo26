@@ -51,7 +51,7 @@ PAGE_HTML = """<!doctype html>
   summary { cursor: pointer; color: #2563eb; }
   details ul { line-height: 1.5; padding-left: 1.2rem; }
   .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }  /* equal columns: both choices the same size */
-  @media (max-width: 30rem) { .buttons { grid-template-columns: 1fr; } }
+  @media (max-width: 30rem) { .buttons { grid-template-columns: 1fr; } #accept { order: -1; } }  /* stacked: the main choice on top */
   button { font: inherit; font-weight: 600; padding: .8rem 1.3rem; border-radius: 10px; cursor: pointer;
            border: 2px solid #2563eb; }
   #accept { background: #2563eb; color: #fff; }
@@ -74,8 +74,8 @@ PAGE_HTML = """<!doctype html>
     </ul>
   </details>
   <div class="buttons">
-    <button id="accept" autofocus>Yes, help improve the course</button>
     <button id="decline">No thanks</button>
+    <button id="accept" autofocus>Yes, help improve the course</button>
   </div>
   <p class="note">One click. You won't see this again, and nothing changes if you say no.</p>
 </div>
