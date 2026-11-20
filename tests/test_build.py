@@ -56,7 +56,7 @@ def test_outer_zip_has_only_the_expected_entries(tmp_path):
     assert zip_path.name == "hs-marimo26-v1.2.3-windows-x64.zip"
     with zipfile.ZipFile(zip_path) as z:
         assert set(z.namelist()) == {
-            "Start.bat", "Change-my-answer.bat", "START-HERE.txt", "package-id.txt", "runtime.zip",
+            "Start.bat", "Change-my-answer.bat", "Uninstall.bat", "START-HERE.txt", "package-id.txt", "runtime.zip",
             "launcher/start.py", "launcher/update.py", "launcher/consent.py",
         }
 
@@ -356,3 +356,121 @@ def test_start_command_leaves_a_clean_install_alone_and_does_not_unpack_again(tm
     assert not any(c.endswith("hs-marimo26/runtime") for c in calls if c.startswith("-dr"))  # only the downloaded folder is cleared
     assert any(c.startswith("-p com.apple.quarantine") for c in calls)  # one native file is looked at, which is cheap
 
+# --- Uninstall: everything the course tools keep on the computer, after a confirmation --------------------------------------------
+
+import socket  # noqa: E402
+
+WINDOWS_ONLY = pytest.mark.skipif(sys.platform != "win32", reason="Uninstall.bat is for Windows")
+UNINSTALL_KINDS = [pytest.param("bat", marks=WINDOWS_ONLY), pytest.param("command", marks=needs_bash)]
+
+
+def run_uninstall(kind, tmp_path, answer, installed=True, running_port=None):
+    """The real Uninstall.bat / Uninstall.command against a made-up profile.
+
+    Returns (result, [the three folders the tools own], [things of other people that must stay])."""
+    local, home, temp = tmp_path / "local", tmp_path / "home", tmp_path / "temp"
+    for folder in (local, home, temp):
+        folder.mkdir(parents=True)
+    if kind == "bat":
+        tools, work, copies = local / "hs-marimo26", home / ".hs-marimo26", temp / "bpm-provenance"
+    else:
+        tools, work, copies = home / "Library" / "Application Support" / "hs-marimo26", home / ".hs-marimo26", temp / "bpm-provenance"
+    if installed:
+        (tools / "runtime" / "python").mkdir(parents=True)
+        (tools / "runtime" / "python" / "python3").write_text("x")
+        (work / "provenance").mkdir(parents=True)
+        (work / "provenance" / "history.db").write_bytes(b"x" * 2048)
+        (work / "consent.json").write_text("{}")
+        (copies / "abc").mkdir(parents=True)
+        (copies / "abc" / "p.db").write_bytes(b"y" * 1024)
+    if running_port is not None:
+        work.mkdir(parents=True, exist_ok=True)
+        (work / "running.port").write_text(str(running_port))
+    # what belongs to somebody else, and must stay
+    (local / "other-app").mkdir()
+    (home / ".marimo").mkdir()
+    (temp / "keep.txt").write_text("keep")
+    bystanders = [local / "other-app", home / ".marimo", temp / "keep.txt"]
+    env = {**os.environ, "LOCALAPPDATA": str(local), "USERPROFILE": str(home), "HOME": home.as_posix(), "TEMP": str(temp), "TMP": str(temp)}
+    env["TMPDIR"] = temp.as_posix()
+    if kind == "bat":
+        command = ["cmd.exe", "/c", str(ROOT / "launcher" / "Uninstall.bat")]
+    else:
+        command = [BASH, (ROOT / "launcher" / "Uninstall.command").as_posix()]
+    # the bytes a keyboard sends on that system: Windows ends a line with CR LF, a Mac with LF alone (bash would read "YES\r" otherwise)
+    typed = answer.replace("\n", "\r\n") if kind == "bat" else answer
+    raw = subprocess.run(command, input=typed.encode(), env=env, capture_output=True, timeout=240)
+    done = subprocess.CompletedProcess(
+        raw.args, raw.returncode, raw.stdout.decode("utf8", "replace").replace("\r\n", "\n"), raw.stderr.decode("utf8", "replace")
+    )
+    return done, [tools, work, copies], bystanders
+
+
+@pytest.mark.parametrize("kind", UNINSTALL_KINDS)
+def test_uninstall_shows_what_goes_and_what_it_means_before_asking(kind, tmp_path):
+    done, _, _ = run_uninstall(kind, tmp_path, "no\n")
+    text = done.stdout
+    for expected in ("provenance", "ONLY on this computer", "course server", "same key", "Type YES"):
+        assert expected in text, expected
+    assert text.index("ONLY on this computer") < text.index("Type YES")  # the impact is shown first, the question comes last
+
+
+@pytest.mark.parametrize("kind", UNINSTALL_KINDS)
+@pytest.mark.parametrize("answer", ["no\n", "\n", "y\n", "YES please\n", ""])
+def test_uninstall_removes_nothing_unless_the_answer_is_yes(kind, answer, tmp_path):
+    done, owned, bystanders = run_uninstall(kind, tmp_path, answer)
+    assert done.returncode == 0
+    assert "Cancelled" in done.stdout
+    assert all(folder.exists() for folder in owned + bystanders)
+
+
+@pytest.mark.parametrize("kind", UNINSTALL_KINDS)
+@pytest.mark.parametrize("answer", ["YES\n", "yes\n"])
+def test_uninstall_removes_the_three_folders_of_the_tools_and_nothing_else(kind, answer, tmp_path):
+    done, owned, bystanders = run_uninstall(kind, tmp_path, answer)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert not any(folder.exists() for folder in owned)
+    assert all(thing.exists() for thing in bystanders)  # other people's folders, such as the user's own marimo settings, stay
+    assert "removed" in done.stdout
+
+
+@pytest.mark.parametrize("kind", UNINSTALL_KINDS)
+def test_uninstall_refuses_while_the_notebooks_are_running(kind, tmp_path):
+    with socket.socket() as server:
+        server.bind(("127.0.0.1", 0))
+        server.listen()
+        done, owned, _ = run_uninstall(kind, tmp_path, "YES\n", running_port=server.getsockname()[1])
+    assert done.returncode != 0
+    assert "running" in done.stdout
+    assert all(folder.exists() for folder in owned)
+
+
+@pytest.mark.parametrize("kind", UNINSTALL_KINDS)
+def test_uninstall_with_a_stale_port_file_is_not_fooled(kind, tmp_path):
+    with socket.socket() as spare:
+        spare.bind(("127.0.0.1", 0))
+        port = spare.getsockname()[1]  # nothing listens on it once the socket is closed
+    done, owned, _ = run_uninstall(kind, tmp_path, "YES\n", running_port=port)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert not any(folder.exists() for folder in owned)
+
+
+@pytest.mark.parametrize("kind", UNINSTALL_KINDS)
+def test_uninstall_with_nothing_installed_says_so(kind, tmp_path):
+    done, _, bystanders = run_uninstall(kind, tmp_path, "YES\n", installed=False)
+    assert done.returncode == 0
+    assert "Nothing to remove" in done.stdout
+    assert all(thing.exists() for thing in bystanders)
+
+
+def test_the_package_ships_the_uninstall_script_of_each_system(tmp_path):
+    with zipfile.ZipFile(build_package(tmp_path)) as z:
+        assert "Uninstall.bat" in z.namelist() and "Uninstall.command" not in z.namelist()
+    with zipfile.ZipFile(build_package(tmp_path / "mac", os_name="macos-arm64")) as z:
+        assert "Uninstall.command" in z.namelist() and "Uninstall.bat" not in z.namelist()
+
+
+def test_start_here_explains_how_to_remove_everything():
+    text = (ROOT / "launcher" / "START-HERE.txt").read_text(encoding="utf8")
+    for expected in ("REMOVING EVERYTHING", "Uninstall", "YES", "course server"):
+        assert expected in text, expected

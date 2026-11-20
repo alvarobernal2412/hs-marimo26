@@ -23,11 +23,11 @@ import zipfile
 from pathlib import Path
 
 TARGETS = {"windows-x64": "x86_64-pc-windows-msvc", "macos-arm64": "aarch64-apple-darwin", "macos-x64": "x86_64-apple-darwin"}
-# the files a student double-clicks, at the root of the zip: start the notebooks, and change the consent answer
+# the files a student double-clicks, at the root of the zip: start the notebooks, change the consent answer, remove everything
 ROOT_SCRIPTS = {
-    "windows-x64": ("Start.bat", "Change-my-answer.bat"),
-    "macos-arm64": ("Start.command", "Change-my-answer.command"),
-    "macos-x64": ("Start.command", "Change-my-answer.command"),
+    "windows-x64": ("Start.bat", "Change-my-answer.bat", "Uninstall.bat"),
+    "macos-arm64": ("Start.command", "Change-my-answer.command", "Uninstall.command"),
+    "macos-x64": ("Start.command", "Change-my-answer.command", "Uninstall.command"),
 }
 # the one big archive inside the zip, unpacked once by the system's own tar on the first start (a few files are quick to unzip;
 # the tens of thousands inside are not, with Explorer's unzip)

@@ -23,6 +23,9 @@ The course notebooks as a package students run on their own laptop: no Docker, n
   rights) on the downloaded folder before unpacking, on the unpacked runtime, and on an installed runtime that still has it. The release
   build checks this on both Mac runners (flags every file of the package, runs the setup, asserts nothing is flagged and the native
   files load). Only `Start.command` itself (the first double-click) is left for the student to approve.
+- `Uninstall.bat` / `Uninstall.command` remove the tools, `~/.hs-marimo26` (consent answer and work kept without a key) and the temporary
+  session copies, after showing the impact and asking for `YES` (pure batch/bash: the runtime's Python is part of what is removed).
+  They never touch the course server's copy of a student's work, the browser's stored key, or the folder the zip was unpacked to.
 - The notebooks are numbered (`00_`, `01_`, `02_`) so the gallery lists them in course order. The notebook ids the course server knows
   them by (`initial-analysis`, `map-explorer` in `lib/initial_analysis_kit.py`) are unchanged: they name students' saved work.
 - A student who said no to sharing has no course server in the analyst notebooks however they were started (`ak.course_server` reads
