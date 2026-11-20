@@ -1,4 +1,5 @@
-"""Builds the student zip of one operating system: standalone Python 3.13 + pinned packages + launcher + notebooks + datasets.
+"""Builds the student zip of one operating system: Python 3.13 (python.org's signed embeddable build on Windows, python-build-standalone on
+Mac) + pinned packages + launcher + notebooks + datasets.
 
 Run it on the operating system it builds for (the packages are installed with that system's own pip):
     python build/build_runtime.py --os windows-x64 --data-dir DATA --out OUT --version 1.0.0
@@ -32,6 +33,11 @@ ROOT_SCRIPTS = {
 # the tens of thousands inside are not, with Explorer's unzip)
 RUNTIME_ARCHIVE = {"windows-x64": "runtime.zip", "macos-arm64": "runtime.tar.gz", "macos-x64": "runtime.tar.gz"}
 RELEASES = "https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest"
+PYTHON_ORG_FTP = "https://www.python.org/ftp/python"
+GET_PIP = "https://bootstrap.pypa.io/get-pip.py"
+# what the notebooks import (`provenance_widget` is the module of the marimo-pmprov package)
+SMOKE_MODULES = ("marimo", "pandas", "pyarrow", "altair", "vegafusion", "plotly", "networkx", "pm4py",
+                 "provenance_widget.widget", "provenance_widget.sync")
 
 
 def render_version_json(version: str) -> str:
@@ -140,7 +146,54 @@ def github_json(url: str, token: str | None = None, attempts: int = 3, sleep=tim
             sleep(5 * 2**attempt)
 
 
-def download_python(target: str, dest: Path) -> Path:
+def find_python_org_embed(exists, newest_patch: int = 30) -> tuple[str, str]:
+    """The newest Python 3.13.x with a Windows embeddable zip on python.org, as (version, url). The newest patch releases are often
+    source-only, so this walks down from `newest_patch` until `exists(url)` says the zip is there."""
+    for patch in range(newest_patch, -1, -1):
+        version = f"3.13.{patch}"
+        url = f"{PYTHON_ORG_FTP}/{version}/python-{version}-embed-amd64.zip"
+        if exists(url):
+            return version, url
+    raise LookupError("no Windows embeddable Python 3.13 on python.org")
+
+
+def url_exists(url: str) -> bool:
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, method="HEAD", headers={"User-Agent": "hs-marimo26"}), timeout=60):
+            return True
+    except urllib.error.HTTPError as problem:
+        if problem.code == 404:
+            return False
+        raise
+
+
+def write_embed_pth(python_dir: Path) -> Path:
+    """The embeddable Python ignores site-packages unless its `._pth` file names them and enables `site`."""
+    pth = next(Path(python_dir).glob("python*._pth"))
+    pth.write_text(f"{pth.stem}.zip\n.\nLib\\site-packages\nimport site\n", encoding="utf8")
+    return pth
+
+
+def download_python_org(dest: Path) -> Path:
+    """Windows: python.org's own embeddable Python. Its python.exe is signed by the Python Software Foundation; the standalone build's
+    is not, and a university's Defender policy ("Access is denied") blocks an unsigned, never-seen executable from starting."""
+    version, url = find_python_org_embed(url_exists)
+    print(f"Using python.org Python {version}")
+    archive = dest / "embed.zip"
+    with urllib.request.urlopen(url, timeout=600) as response, open(archive, "wb") as out:
+        shutil.copyfileobj(response, out)
+    python_dir = dest / "python"
+    with zipfile.ZipFile(archive) as z:
+        z.extractall(python_dir)
+    write_embed_pth(python_dir)
+    get_pip = dest / "get-pip.py"  # the embeddable Python has no pip
+    with urllib.request.urlopen(GET_PIP, timeout=120) as response, open(get_pip, "wb") as out:
+        shutil.copyfileobj(response, out)
+    subprocess.run([str(python_dir / "python.exe"), str(get_pip), "--no-warn-script-location"], check=True)
+    return python_dir
+
+
+def download_standalone(target: str, dest: Path) -> Path:
     url = find_python_asset(github_json(RELEASES, token=os.environ.get("GITHUB_TOKEN")), target)
     archive = dest / "python.tar.gz"
     with urllib.request.urlopen(url, timeout=600) as response, open(archive, "wb") as out:
@@ -148,6 +201,17 @@ def download_python(target: str, dest: Path) -> Path:
     with tarfile.open(archive) as t:
         t.extractall(dest)
     return dest / "python"
+
+
+def download_python(target: str, dest: Path) -> Path:
+    if target == TARGETS["windows-x64"]:
+        return download_python_org(dest)
+    return download_standalone(target, dest)
+
+
+def smoke_test(interpreter: Path, modules: tuple[str, ...] = SMOKE_MODULES) -> None:
+    """Starts the built Python and imports what the notebooks need, so a broken runtime fails the build, not a student's first start."""
+    subprocess.run([str(interpreter), "-s", "-c", "import " + ", ".join(modules)], check=True)
 
 
 def main() -> int:
@@ -162,6 +226,7 @@ def main() -> int:
         python_dir = download_python(TARGETS[args.os], Path(tmp))
         interpreter = python_dir / ("python.exe" if args.os == "windows-x64" else "bin/python3")
         subprocess.run([str(interpreter), "-s", "-m", "pip", "install", "--no-warn-script-location", "-r", str(repo / "build" / "requirements.txt")], check=True)
+        smoke_test(interpreter)
         # the datasets of the zip: the big .xes from the data release, plus the csv made from the parquet the notebooks use
         datasets = Path(tmp) / "datasets"
         datasets.mkdir()
