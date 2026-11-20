@@ -71,7 +71,7 @@ jobs:
           cat > notes.md <<EOF
           Course notebooks $V.
 
-          **Students:** download the zip for your computer, unzip it, and start it (see README-students.md inside).
+          **Students:** download the zip for your computer, unzip it, and start it (see START-HERE.txt inside).
           - Windows: \`hs-marimo26-v$V-windows-x64.zip\`
           - Mac with an Apple chip (M1 or newer): \`hs-marimo26-v$V-macos-arm64.zip\`
           - Mac with an Intel chip: \`hs-marimo26-v$V-macos-x64.zip\`

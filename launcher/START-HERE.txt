@@ -1,0 +1,111 @@
+COURSE NOTEBOOKS - HOW TO START THEM
+====================================
+
+You do not install anything and you never type anything. Everything is done by double-clicking.
+
+
+STEP 1 - UNZIP
+--------------
+Unzip the file you downloaded. Put the folder anywhere you like.
+  Windows: right-click the zip file, choose "Extract All", then "Extract".
+  Mac:     double-click the zip file.
+Do not start anything from inside the zip file. It only holds a few files, so this takes seconds.
+
+
+STEP 2 - START
+--------------
+WINDOWS
+  Double-click "Start" (it is called Start.bat).
+  If Windows says "Windows protected your PC": click "More info", then "Run anyway".
+
+MAC
+  Double-click "Start.command".
+  The first time, your Mac says it cannot check this file for malicious software. This is normal.
+    1. Click "Done" (do NOT click "Move to Trash").
+    2. Open the Apple menu, then "System Settings", then "Privacy & Security".
+    3. Scroll down. You see a message about "Start.command". Click "Open Anyway", then "Open".
+       Your Mac may ask for your password.
+    (On macOS 14 or older you can instead right-click "Start.command", choose "Open", then "Open" again.)
+  You only do this once.
+
+
+STEP 3 - WAIT, THE FIRST TIME ONLY
+----------------------------------
+A window opens. The very first time it says "Setting up the course tools".
+This takes a few minutes. Just wait and keep the window open.
+Then a page asks whether your analyses may be shared with the course (see "Sharing your analyses" below),
+and then your browser shows the list of notebooks. Click the one you need.
+The next times, it starts in a few seconds.
+
+
+STEP 4 - WORK
+-------------
+Keep the window open while you work. Closing the window stops the notebooks.
+Closing the browser tab does NOT stop them: double-click Start again and the tab comes back.
+
+
+STOPPING, AND STARTING AGAIN
+----------------------------
+To stop:   close the window that opened in step 2 (the browser tab can stay or go).
+To start:  double-click Start again. It is always safe to double-click it again, at any time:
+             - if the notebooks are not running, it starts them;
+             - if they are already running, it just opens the page again;
+             - if the first setup was cut short, it finishes it (see below).
+Your work is saved under your key, so you lose nothing when you stop.
+
+
+IF YOU CLOSE THE LAPTOP, IT GOES TO SLEEP, OR IT SHUTS DOWN
+-----------------------------------------------------------
+- Sleep, or lid closed: the notebooks just pause. When you wake the laptop, reload the page in your browser.
+  If the page still says it is disconnected: close the window, then double-click Start again.
+- Shut down, restart, battery empty, or a crash: the notebooks are gone, nothing keeps running in the background.
+  Double-click Start again.
+- This also holds in the middle of the first setup. Nothing is broken: double-click Start again and it
+  finishes the setup (it may start the setup over, so allow a few minutes again). Please do not open Start twice
+  at the same time while the very first setup is running.
+
+
+YOUR KEY
+--------
+"initial-analysis" and "map-explorer" ask for the key your teachers gave you. Paste it once. Your work is saved
+under it and comes back whenever you use the same key, on any computer.
+
+
+SHARING YOUR ANALYSES (OPTIONAL)
+--------------------------------
+The first time you start, a page asks whether your analyses may be shared with the course, anonymised:
+only the analysis steps you run, not your clicks. They are used to improve the course and for research on tools
+that support exploratory analysis. You answer once and are not asked again. If you say no, everything works the
+same; your work just stays on your computer.
+
+To change your answer: double-click "Change-my-answer" (Change-my-answer.bat on Windows, Change-my-answer.command
+on a Mac, next to Start). On a Mac, the first time, do the same "Open Anyway" step as for Start.command.
+If the notebooks are running, close their window first. The page then asks again.
+
+
+IF SOMETHING GOES WRONG
+-----------------------
+- A red message ("Failed to fetch", "Unauthorized", lost connection), or a page that does not respond:
+  reload the page. Your work comes back as you left it. If the key is asked again, paste it again.
+- "Access is denied", or it will not start, on a laptop managed by your university: the laptop's security
+  policy can block a new program. Ask your IT department to allow this folder:
+    Windows: %LOCALAPPDATA%\hs-marimo26
+    Mac:     ~/Library/Application Support/hs-marimo26
+  Nothing in it needs administrator rights.
+- Still stuck? Take a photo of the window and send it to your teachers.
+
+
+UPDATES
+-------
+Each time you start, the notebooks fetch the latest version by themselves when you are online.
+You only need to download the zip again if the window tells you so.
+
+
+THE EVENT LOGS
+--------------
+They are in the "notebooks/data" folder inside the folder the course tools were set up in:
+  Windows: %LOCALAPPDATA%\hs-marimo26\runtime\notebooks\data
+  Mac:     ~/Library/Application Support/hs-marimo26/runtime/notebooks/data
+- Dhana loan application: dhana-loan-application.xes, dhana-loan-application-molab.xes, dhana-loan-application.csv
+  (the notebooks themselves read dhana-loan-application.parquet, the same log in a format that loads in seconds).
+- Purchasing-Example.csv, SepsisCases2020EventLog.xes.
