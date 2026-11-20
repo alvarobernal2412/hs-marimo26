@@ -40,29 +40,15 @@ jobs:
           RAW: ${{ inputs.version || github.ref_name }}
           GITHUB_TOKEN: ${{ github.token }}  # the runner's shared address is rate limited for anonymous API calls
         run: python build/build_runtime.py --os ${{ matrix.os }} --data-dir data-dl --out out --version "${RAW#v}" --build-id "${GITHUB_SHA::7}"
-      - name: Check the Mac package opens without macOS prompts (the quarantine flag of a download)
+      - name: Check the Mac terminal installer (install.sh) installs a package that sets up and loads
         if: runner.os == 'macOS'
         shell: bash
         run: |
           set -euo pipefail
           work="$(mktemp -d)"
-          cd "$work"
-          unzip -q "$GITHUB_WORKSPACE"/out/hs-marimo26-v*-${{ matrix.os }}.zip
-          # what a browser and Archive Utility do to a download: every file of it is flagged
-          find . -type f -exec xattr -w com.apple.quarantine "0083;5f000000;Safari;" {} +
-          mkdir home control
-          # how many files under $1 carry the flag (xattr exits non-zero for a file without it, which must not stop this script)
-          count_flagged() { { find "$1" -type f -exec xattr -p com.apple.quarantine {} + 2>/dev/null || true; } | wc -l | tr -d ' '; }
-          # control, only reported: does this macOS's own tar hand the flag on to what it unpacks?
-          /usr/bin/tar -xzf runtime.tar.gz -C control
-          echo "files that inherited the flag through tar: $(count_flagged control)"
-          # the setup of Start.command itself (HS_SETUP_ONLY stops it before it starts the notebooks)
-          HOME="$work/home" HS_SETUP_ONLY=1 ./Start.command
-          runtime="$work/home/Library/Application Support/hs-marimo26/runtime"
-          flagged="$(count_flagged "$runtime")"
-          echo "files still flagged after the setup: $flagged"
-          test "$flagged" = "0"
-          "$runtime/python/bin/python3" -s -c "import msgspec, pandas, marimo; print('the native files load')"
+          HOME="$work/home" HS_DEST="$work/hs-marimo26" HS_NO_START=1 HS_PACKAGE_URL="$(ls "$GITHUB_WORKSPACE"/out/hs-marimo26-v*-${{ matrix.os }}.zip)" bash launcher/install.sh
+          HOME="$work/home" HS_SETUP_ONLY=1 "$work/hs-marimo26/Start.command"
+          "$work/home/Library/Application Support/hs-marimo26/runtime/python/bin/python3" -s -c "import msgspec, pandas, marimo; print('installed by install.sh: the native files load')"
       - uses: actions/upload-artifact@v4
         with:
           name: zip-${{ matrix.os }}
@@ -84,6 +70,8 @@ jobs:
           path: out
       - name: Zip the notebooks (what running launchers fetch)
         run: python build/make_notebooks_zip.py --out out/notebooks.zip
+      - name: Put the terminal installers next to the zips
+        run: cp launcher/install.sh launcher/install.ps1 out/
       - name: Draft the release
         shell: bash
         env:
@@ -94,12 +82,12 @@ jobs:
           cat > notes.md <<EOF
           Course notebooks $V.
 
-          **Students:** download the zip for your computer, unzip it, and start it (see START-HERE.txt inside).
-          - Windows: \`hs-marimo26-v$V-windows-x64.zip\`
-          - Mac with an Apple chip (M1 or newer): \`hs-marimo26-v$V-macos-arm64.zip\`
-          - Mac with an Intel chip: \`hs-marimo26-v$V-macos-x64.zip\`
+          **Students:** paste one line into a terminal, once. It installs the course tools into your home folder and starts them (START-HERE.txt in that folder explains the rest). Later, double-click Start there.
+          - Mac (Terminal): \`curl -fsSL https://github.com/alvarobernal2412/hs-marimo26/releases/latest/download/install.sh | bash\`
+          - Windows (PowerShell): \`powershell -ExecutionPolicy Bypass -c "irm https://github.com/alvarobernal2412/hs-marimo26/releases/latest/download/install.ps1 | iex"\`
 
-          \`notebooks.zip\` is not for students: running copies fetch it by themselves.
+
+          The zips below are what the installer downloads; students do not download them by hand. \`notebooks.zip\` is fetched by running copies by themselves.
           EOF
           if gh release view "v$V" >/dev/null 2>&1; then
             gh release upload "v$V" out/* --clobber
