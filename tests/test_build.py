@@ -65,7 +65,7 @@ def test_package_id_is_the_version(tmp_path):
 
 def test_runtime_zip_holds_python_notebooks_and_version(tmp_path):
     names = set(inner_zip(build_package(tmp_path)).namelist())
-    for expected in ("python/python.exe", "notebooks/lecture.py", "notebooks/data/dhana-loan-application-molab.xes", "version.json"):
+    for expected in ("python/python.exe", "notebooks/00_lecture.py", "notebooks/data/dhana-loan-application-molab.xes", "version.json"):
         assert expected in names, expected
     assert not any(name.startswith("launcher/") for name in names)
     assert not any("__pycache__" in name or name.endswith(".pyc") for name in names)
@@ -87,7 +87,7 @@ def test_mac_runtime_is_a_tar_that_keeps_exec_bits(tmp_path):
     assert not any(name.endswith(".bat") for name in names)
     with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as t:
         assert t.getmember("python/bin/python3").mode & 0o777 == 0o755
-        assert t.getmember("notebooks/lecture.py").mode & 0o777 == 0o644
+        assert t.getmember("notebooks/00_lecture.py").mode & 0o777 == 0o644
         assert "version.json" in t.getnames()
 
 

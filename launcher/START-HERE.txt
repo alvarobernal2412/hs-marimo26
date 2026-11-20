@@ -67,7 +67,7 @@ IF YOU CLOSE THE LAPTOP, IT GOES TO SLEEP, OR IT SHUTS DOWN
 
 YOUR KEY
 --------
-"initial-analysis" and "map-explorer" ask for the key your teachers gave you. Paste it once. Your work is saved
+"01 Initial Analysis" and "02 Map Explorer" ask for the key your teachers gave you. Paste it once. Your work is saved
 under it and comes back whenever you use the same key, on any computer.
 
 
