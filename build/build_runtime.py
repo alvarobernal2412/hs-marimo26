@@ -115,7 +115,7 @@ def assemble(repo: Path, python_dir: Path, data_dir: Path, out_dir: Path, os_nam
         launcher = repo / "launcher"
         loose: list[Entry] = [(launcher / script, script, 0o755) for script in ROOT_SCRIPTS[os_name]]
         loose += [(launcher / name, f"launcher/{name}", 0o644) for name in ("start.py", "update.py", "consent.py")]
-        loose.append((launcher / "README-students.md", "README-students.md", 0o644))
+        loose.append((launcher / "START-HERE.txt", "START-HERE.txt", 0o644))
         loose.append((package_id, "package-id.txt", 0o644))
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
             for file, name, mode in loose:

@@ -53,7 +53,7 @@ def test_outer_zip_has_only_the_expected_entries(tmp_path):
     assert zip_path.name == "hs-marimo26-v1.2.3-windows-x64.zip"
     with zipfile.ZipFile(zip_path) as z:
         assert set(z.namelist()) == {
-            "Start.bat", "Change-my-answer.bat", "README-students.md", "package-id.txt", "runtime.zip",
+            "Start.bat", "Change-my-answer.bat", "START-HERE.txt", "package-id.txt", "runtime.zip",
             "launcher/start.py", "launcher/update.py", "launcher/consent.py",
         }
 
@@ -186,7 +186,7 @@ def test_change_my_answer_scripts_call_start_with_consent():
 
 
 def test_student_readme_has_no_terminal_instructions():
-    text = (ROOT / "launcher" / "README-students.md").read_text(encoding="utf8")
+    text = (ROOT / "launcher" / "START-HERE.txt").read_text(encoding="utf8")
     assert "Change-my-answer" in text
     assert "--consent" not in text and "terminal" not in text.lower()  # students never open a terminal
     assert "Documents" not in text  # the zip is small now and unpacks itself elsewhere; no folder advice that points into OneDrive
@@ -231,6 +231,19 @@ def test_smoke_test_passes_for_importable_modules_and_fails_for_missing_ones():
     br.smoke_test(Path(sys.executable), modules=("json", "zipfile"))
     with pytest.raises(subprocess.CalledProcessError):
         br.smoke_test(Path(sys.executable), modules=("no_such_module_for_the_smoke_test",))
+
+
+def test_start_here_explains_stopping_sleeping_and_restarting():
+    text = (ROOT / "launcher" / "START-HERE.txt").read_text(encoding="utf8")
+    for expected in ("STOPPING, AND STARTING AGAIN", "SLEEP", "SHUTS DOWN", "nothing keeps running in the background",
+                     "double-click Start again", "finishes the setup"):
+        assert expected in text, expected
+
+
+def test_student_readme_explains_current_mac_and_managed_laptop_blocks():
+    text = (ROOT / "launcher" / "START-HERE.txt").read_text(encoding="utf8")
+    assert "Privacy & Security" in text and "Open Anyway" in text  # macOS 15 removed the right-click override
+    assert "IT department" in text  # a university-managed laptop may need its IT team to allow the folder
 
 
 def test_start_command_unpacks_once_with_tar_and_passes_flags():

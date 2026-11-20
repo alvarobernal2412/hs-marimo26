@@ -9,10 +9,15 @@ The course notebooks as a package students run on their own laptop: no Docker, n
   `update.py`, `consent.py` (the one-time consent page; the answer is kept in `~/.hs-marimo26/consent.json`; unless it is "accepted"
   the notebooks run with `PMPROV_SYNC_URL=""`, i.e. without the course server; `--consent` asks again, and refuses while the notebooks run).
 - The student zip is two layers, so unzipping it is quick (Explorer's unzip is slow on tens of thousands of files): a few loose files
-  (`Start.*`, `Change-my-answer.*`, `launcher/`, `README-students.md`, `package-id.txt`) plus ONE runtime archive (`runtime.zip` on
-  Windows, `runtime.tar.gz` on Mac: `python/`, `notebooks/`, `version.json`). The first start unpacks it with the system's own `tar` into
-  `%LOCALAPPDATA%\hs-marimo26\runtime` (Windows) or `~/Library/Application Support/hs-marimo26/runtime` (Mac), marked by `ready-<version>`;
-  `start.py` and `update.py` work on that folder.
+  (`Start.*`, `Change-my-answer.*`, `launcher/`, `START-HERE.txt` (the students' step-by-step, plain text so a double-click opens it),
+  `package-id.txt`) plus ONE runtime archive (`runtime.zip` on Windows, `runtime.tar.gz` on Mac: `python/`, `notebooks/`, `version.json`).
+  The first start unpacks it with the system's own `tar` into `runtime.new` beside `runtime` in `%LOCALAPPDATA%\hs-marimo26`
+  (Windows) or `~/Library/Application Support/hs-marimo26` (Mac), writes `ready-<version>` inside it and only then swaps it in as
+  `runtime`: closing the window or shutting the laptop down mid-setup is safe, the next start redoes the unpack (a complete `runtime.new`
+  is only swapped in). `start.py` and `update.py` work on that folder.
+- Windows runs python.org's embeddable Python (its `python.exe` is signed by the Python Software Foundation; the unsigned
+  python-build-standalone one is blocked by managed laptops' Defender policy, "Access is denied"); Mac keeps python-build-standalone.
+  The build smoke-tests the built Python (`SMOKE_MODULES`) before it zips anything.
 - `build/`: `build_runtime.py` makes the per-OS student zip, `make_notebooks_zip.py` the `notebooks.zip` of a release.
 - `.github/workflows/release.yml`: on a `v*` tag, builds the three student zips and `notebooks.zip` and drafts the release.
 
