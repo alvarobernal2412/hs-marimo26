@@ -26,22 +26,88 @@ def test_find_python_asset_picks_install_only_for_target():
     assert br.find_python_asset(release, "aarch64-apple-darwin") == "mac"
 
 
-def test_layout_has_expected_paths_and_zip(tmp_path):
+def build_package(tmp_path, os_name="windows-x64", version="1.2.3"):
+    """A tiny fake runtime run through the real assemble(); returns the outer zip's path."""
     python_dir = tmp_path / "py"
-    (python_dir).mkdir()
+    (python_dir / "bin").mkdir(parents=True)
     (python_dir / "python.exe").write_text("")
+    (python_dir / "bin" / "python3").write_text("")
+    (python_dir / "bin" / "python3").chmod(0o755)
+    (python_dir / "pkg" / "__pycache__").mkdir(parents=True)
+    (python_dir / "pkg" / "__pycache__" / "x.cpython-313.pyc").write_text("")
     data = tmp_path / "data"
     data.mkdir()
     (data / "dhana-loan-application-molab.xes").write_text("X")
-    out = tmp_path / "out"
-    zip_path = br.assemble(ROOT, python_dir, data, out, os_name="windows-x64", version="1.2.3")
-    with zipfile.ZipFile(zip_path) as z:
-        names = set(z.namelist())
+    return br.assemble(ROOT, python_dir, data, tmp_path / "out", os_name=os_name, version=version)
+
+
+def inner_zip(outer_path: Path, name: str = "runtime.zip") -> zipfile.ZipFile:
+    import io
+
+    with zipfile.ZipFile(outer_path) as outer:
+        return zipfile.ZipFile(io.BytesIO(outer.read(name)))
+
+
+def test_outer_zip_has_only_the_expected_entries(tmp_path):
+    zip_path = build_package(tmp_path)
     assert zip_path.name == "hs-marimo26-v1.2.3-windows-x64.zip"
-    for expected in ("Start.bat", "python/python.exe", "launcher/start.py", "launcher/update.py", "launcher/consent.py", "version.json",
-                     "notebooks/lecture.py", "notebooks/data/dhana-loan-application-molab.xes"):
+    with zipfile.ZipFile(zip_path) as z:
+        assert set(z.namelist()) == {
+            "Start.bat", "Change-my-answer.bat", "README-students.md", "package-id.txt", "runtime.zip",
+            "launcher/start.py", "launcher/update.py", "launcher/consent.py",
+        }
+
+
+def test_package_id_is_the_version(tmp_path):
+    with zipfile.ZipFile(build_package(tmp_path)) as z:
+        assert z.read("package-id.txt").decode("utf8").strip() == "1.2.3"
+
+
+def test_runtime_zip_holds_python_notebooks_and_version(tmp_path):
+    names = set(inner_zip(build_package(tmp_path)).namelist())
+    for expected in ("python/python.exe", "notebooks/lecture.py", "notebooks/data/dhana-loan-application-molab.xes", "version.json"):
         assert expected in names, expected
-    assert "Start.command" not in names
+    assert not any(name.startswith("launcher/") for name in names)
+    assert not any("__pycache__" in name or name.endswith(".pyc") for name in names)
+
+
+def test_runtime_is_stored_not_recompressed(tmp_path):
+    with zipfile.ZipFile(build_package(tmp_path)) as z:
+        assert z.getinfo("runtime.zip").compress_type == zipfile.ZIP_STORED
+
+
+def test_mac_runtime_is_a_tar_that_keeps_exec_bits(tmp_path):
+    import io
+    import tarfile
+
+    with zipfile.ZipFile(build_package(tmp_path, os_name="macos-arm64")) as z:
+        names = set(z.namelist())
+        archive = z.read("runtime.tar.gz")
+    assert {"Start.command", "Change-my-answer.command", "runtime.tar.gz"} <= names
+    assert not any(name.endswith(".bat") for name in names)
+    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as t:
+        assert t.getmember("python/bin/python3").mode & 0o777 == 0o755
+        assert t.getmember("notebooks/lecture.py").mode & 0o777 == 0o644
+        assert "version.json" in t.getnames()
+
+
+def test_system_tar_unpacks_the_windows_runtime(tmp_path):
+    import shutil
+    import subprocess
+
+    import pytest
+
+    if shutil.which("tar") is None:
+        pytest.skip("no tar on this machine")
+    zip_path = build_package(tmp_path)
+    outer = tmp_path / "outer"
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    with zipfile.ZipFile(zip_path) as z:
+        z.extract("runtime.zip", outer)
+    subprocess.run(["tar", "-xf", str(outer / "runtime.zip"), "-C", str(runtime)], check=True)
+    assert (runtime / "python" / "python.exe").exists()
+    assert (runtime / "version.json").exists()
 
 
 def test_export_csv_writes_the_log_with_its_columns(tmp_path):
