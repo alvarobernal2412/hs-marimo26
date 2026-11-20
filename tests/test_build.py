@@ -171,7 +171,10 @@ def test_start_bat_unpacks_once_with_tar_and_passes_flags():
     for expected in (r"%LOCALAPPDATA%\hs-marimo26\runtime", "package-id.txt", "ready-!PKG!", r"System32\tar.exe", "Expand-Archive", "%*"):
         assert expected in text, expected  # System32's tar reads zip; a Git-for-Windows tar earlier on the PATH does not
     assert "enabledelayedexpansion" in text  # a path with ")" in it must not close the batch block
-    assert text.index("-xf") < text.index("type nul")  # the marker is written last: a failed unpack leaves none
+    # an interrupted setup must be safe to repeat: unpack next to the runtime, mark it complete INSIDE the new folder, and only then
+    # swap it in; a leftover half-unpacked folder is thrown away, a complete one is only swapped
+    assert "!RT!.new" in text and r"python\python.exe" in text
+    assert text.index("rmdir /s /q \"!NEW!\"") < text.index("-xf") < text.index("type nul") < text.index("move ")
 
 
 def test_change_my_answer_scripts_call_start_with_consent():
@@ -193,4 +196,5 @@ def test_start_command_unpacks_once_with_tar_and_passes_flags():
     text = (ROOT / "launcher" / "Start.command").read_text(encoding="utf8")
     for expected in ("Library/Application Support/hs-marimo26/runtime", "package-id.txt", "ready-", "/usr/bin/tar -xzf", '"$@"'):
         assert expected in text, expected
-    assert text.index("/usr/bin/tar -xzf") < text.index("touch ")
+    assert '"$RT.new"' in text and "python/bin/python3" in text  # unpacked beside the runtime, swapped in only when complete
+    assert text.index("rm -rf \"$NEW\"") < text.index("/usr/bin/tar -xzf") < text.index("touch ") < text.index("mv ")
