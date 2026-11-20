@@ -4,7 +4,7 @@ Standard library only: it runs with the bundled Python before anything else star
 must always be able to start with the notebooks they already have.
 
 Versions are `MAJOR.MINOR.PATCH`. The bundle holds one (`version.json`). A release with the same MAJOR only changes the notebooks,
-so it is applied; a newer MAJOR changes the package itself (Python, libraries, data folder), so the student is told to download it.
+so it is applied; a newer MAJOR changes the package itself (Python, libraries, data folder), so the student is told to paste the install line again (it downloads the new package).
 """
 from __future__ import annotations
 
@@ -69,7 +69,7 @@ def apply_release(root: Path, release: dict, download=download_to) -> str:
     if wanted <= installed:
         return "current"
     if wanted[0] != installed[0]:
-        print("A new version of the course package is available. Please download it again from the course page.")
+        print("A new version of the course package is available. Please paste the install line from START-HERE.txt again to download it.")
         return "needs-package"
     try:
         with tempfile.TemporaryDirectory() as tmp:

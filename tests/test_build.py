@@ -188,10 +188,11 @@ def test_change_my_answer_scripts_call_start_with_consent():
     assert command.startswith("#!/bin/bash")
 
 
-def test_student_readme_has_no_terminal_instructions():
+def test_student_readme_installs_with_one_pasted_line_and_has_no_flags():
     text = (ROOT / "launcher" / "START-HERE.txt").read_text(encoding="utf8")
-    assert "Change-my-answer" in text
-    assert "--consent" not in text and "terminal" not in text.lower()  # students never open a terminal
+    assert "Change-my-answer" in text and "--consent" not in text
+    assert "install.sh | bash" in text and "install.ps1 | iex" in text  # the one line each system pastes, once
+    assert "Open Anyway" not in text and "Extract All" not in text  # no browser download any more: no security dialog, no unzipping
     assert "Documents" not in text  # the zip is small now and unpacks itself elsewhere; no folder advice that points into OneDrive
 
 
@@ -243,9 +244,9 @@ def test_start_here_explains_stopping_sleeping_and_restarting():
         assert expected in text, expected
 
 
-def test_student_readme_explains_current_mac_and_managed_laptop_blocks():
+def test_student_readme_explains_how_to_open_a_terminal_and_the_managed_laptop_block():
     text = (ROOT / "launcher" / "START-HERE.txt").read_text(encoding="utf8")
-    assert "Privacy & Security" in text and "Open Anyway" in text  # macOS 15 removed the right-click override
+    assert "Terminal" in text and "PowerShell" in text  # where to paste the line, for a student who never saw one
     assert "IT department" in text  # a university-managed laptop may need its IT team to allow the folder
 
 

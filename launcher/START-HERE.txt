@@ -1,55 +1,45 @@
-COURSE NOTEBOOKS - HOW TO START THEM
-====================================
+COURSE NOTEBOOKS - HOW TO INSTALL AND START THEM
+================================================
 
-You do not install anything and you never type anything. Everything is done by double-clicking.
-
-
-STEP 1 - UNZIP
---------------
-Unzip the file you downloaded. Put the folder anywhere you like.
-  Windows: right-click the zip file, choose "Extract All", then "Extract".
-  Mac:     double-click the zip file.
-Do not start anything from inside the zip file. It only holds a few files, so this takes seconds.
+You install the course tools ONCE by pasting one line into a window where you can type. After that you only double-click.
+Nothing is downloaded with your browser, so your computer shows no security warnings.
 
 
-STEP 2 - START
---------------
-WINDOWS
-  Double-click "Start" (it is called Start.bat).
-  If Windows says "Windows protected your PC": click "More info", then "Run anyway".
+INSTALLING (ONCE)
+-----------------
+1. Open the window where you can type:
+     Mac:      press Cmd + Space, type  Terminal  and press Enter.
+     Windows:  open the Start menu, type  PowerShell  and press Enter.
+2. Copy the line for your computer from the course page (or from here), paste it into that window and press Enter.
+     Mac:      Cmd + V pastes.
+     Windows:  a right-click pastes.
 
-MAC
-  Double-click "Start.command".
-  The first time, your Mac says it cannot check this file for malicious software. This is normal.
-    1. Click "Done" (do NOT click "Move to Trash").
-    2. Open the Apple menu, then "System Settings", then "Privacy & Security".
-    3. Scroll down. You see a message about "Start.command". Click "Open Anyway", then "Open".
-       Your Mac may ask for your password.
-    (On macOS 14 or older you can instead right-click "Start.command", choose "Open", then "Open" again.)
-  You only do this once. After that first step no more permission questions should appear: Start.command clears the
-  "downloaded" mark that macOS puts on every file of a download (the mark is what makes macOS ask about each file), also for
-  Change-my-answer and Uninstall. If a window ever says "Apple could not verify ..." about some other file, click "Done"
-  (never "Move to Trash") and tell your teachers.
+   MAC
+     curl -fsSL https://github.com/alvarobernal2412/hs-marimo26/releases/latest/download/install.sh | bash
 
+   WINDOWS
+     powershell -ExecutionPolicy Bypass -c "irm https://github.com/alvarobernal2412/hs-marimo26/releases/latest/download/install.ps1 | iex"
 
-STEP 3 - WAIT, THE FIRST TIME ONLY
-----------------------------------
-A window opens. The very first time it says "Setting up the course tools".
-This takes a few minutes. Just wait and keep the window open.
-Then a page asks whether your analyses may be shared with the course (see "Sharing your analyses" below),
-and then your browser shows the list of notebooks. Click the one you need.
-The next times, it starts in a few seconds.
+3. Wait. It downloads the course tools into a folder called  hs-marimo26  in your home folder, and starts them.
+   The very first time it says "Setting up the course tools" and takes a few minutes. Keep the window open.
+4. Then a page asks whether your analyses may be shared with the course (see "Sharing your analyses" below),
+   and your browser shows the list of notebooks. Click the one you need.
+
+Only the first step needs the typing window. From now on, you start the notebooks like this:
 
 
-STEP 4 - WORK
--------------
-Keep the window open while you work. Closing the window stops the notebooks.
+STARTING (EVERY TIME)
+---------------------
+Open the folder  hs-marimo26  in your home folder and double-click "Start"
+(Start.bat on Windows, Start.command on a Mac). It starts in a few seconds.
+
+Keep the window that opens while you work. Closing the window stops the notebooks.
 Closing the browser tab does NOT stop them: double-click Start again and the tab comes back.
 
 
 STOPPING, AND STARTING AGAIN
 ----------------------------
-To stop:   close the window that opened in step 2 (the browser tab can stay or go).
+To stop:   close the window that opened when you started (the browser tab can stay or go).
 To start:  double-click Start again. It is always safe to double-click it again, at any time:
              - if the notebooks are not running, it starts them;
              - if they are already running, it just opens the page again;
@@ -82,8 +72,7 @@ that support exploratory analysis. You answer once and are not asked again. If y
 same; your work just stays on your computer.
 
 To change your answer: double-click "Change-my-answer" (Change-my-answer.bat on Windows, Change-my-answer.command
-on a Mac, next to Start). On a Mac, the first time, do the same "Open Anyway" step as for Start.command.
-If the notebooks are running, close their window first. The page then asks again.
+on a Mac, next to Start). If the notebooks are running, close their window first. The page then asks again.
 
 
 REMOVING EVERYTHING
@@ -94,11 +83,13 @@ means for your work, and goes ahead only when you type YES.
 - If you shared your analyses with the course server, that copy stays there: Uninstall does not remove it. Enter the same key
   after a new setup and your work comes back. Ask your teachers if you want the server copy deleted too.
 - If you did not share them, they exist only on this computer and are lost for good.
-- The folder with Start in it stays: delete it yourself when you no longer need it.
+- The folder  hs-marimo26  with Start in it stays: delete it yourself when you no longer need it.
 
 
 IF SOMETHING GOES WRONG
 -----------------------
+- The pasted line says it could not find the latest version, or the download did not work: check your internet
+  connection and paste the line again. It is safe to paste it as often as you like.
 - A red message ("Failed to fetch", "Unauthorized", lost connection), or a page that does not respond:
   reload the page. Your work comes back as you left it. If the key is asked again, paste it again.
 - "Access is denied", or it will not start, on a laptop managed by your university: the laptop's security
@@ -112,7 +103,7 @@ IF SOMETHING GOES WRONG
 UPDATES
 -------
 Each time you start, the notebooks fetch the latest version by themselves when you are online.
-You only need to download the zip again if the window tells you so.
+Only if the window tells you that a new package is needed, paste the install line above once more.
 
 
 THE EVENT LOGS
