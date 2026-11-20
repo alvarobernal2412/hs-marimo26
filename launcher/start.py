@@ -85,6 +85,10 @@ def wait_until_listening(port: int, seconds: int = 120) -> bool:
 def main(root: Path) -> int:
     root, state = Path(root), state_dir()
     already = running_port(state)
+    if already and "--consent" in sys.argv[2:]:
+        # the running notebooks keep the answer they started with: it can only change on a fresh start
+        print("Close the black window first, then double-click Change-my-answer again.")
+        return 1
     if already:
         print(f"The notebooks are already running; opening http://localhost:{already}")
         webbrowser.open(f"http://localhost:{already}")

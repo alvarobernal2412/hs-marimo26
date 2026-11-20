@@ -174,6 +174,14 @@ def test_start_bat_unpacks_once_with_tar_and_passes_flags():
     assert text.index("-xf") < text.index("type nul")  # the marker is written last: a failed unpack leaves none
 
 
+def test_change_my_answer_scripts_call_start_with_consent():
+    bat = (ROOT / "launcher" / "Change-my-answer.bat").read_text(encoding="utf8")
+    command = (ROOT / "launcher" / "Change-my-answer.command").read_text(encoding="utf8")
+    assert 'Start.bat" --consent' in bat
+    assert 'Start.command" --consent' in command
+    assert command.startswith("#!/bin/bash")
+
+
 def test_start_command_unpacks_once_with_tar_and_passes_flags():
     text = (ROOT / "launcher" / "Start.command").read_text(encoding="utf8")
     for expected in ("Library/Application Support/hs-marimo26/runtime", "package-id.txt", "ready-", "/usr/bin/tar -xzf", '"$@"'):
