@@ -82,6 +82,44 @@ def wait_until_listening(port: int, seconds: int = 120) -> bool:
     return False
 
 
+def tie_to_this_process(process):
+    """Windows: makes the notebooks server die with this launcher, whatever ends the launcher (a crash, "End task"), so no server is
+    left running in the background. Returns the job handle, which must stay alive as long as the launcher does. Best effort: None
+    when it is not possible, and on other systems (there, closing the window ends both)."""
+    if sys.platform != "win32":
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+    kernel32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+
+    class Basic(ctypes.Structure):
+        _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64), ("LimitFlags", wintypes.DWORD),
+                    ("MinimumWorkingSetSize", ctypes.c_size_t), ("MaximumWorkingSetSize", ctypes.c_size_t),
+                    ("ActiveProcessLimit", wintypes.DWORD), ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD),
+                    ("SchedulingClass", wintypes.DWORD)]
+
+    class IoCounters(ctypes.Structure):
+        _fields_ = [(name, ctypes.c_uint64) for name in ("ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+                                                         "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+
+    class Extended(ctypes.Structure):
+        _fields_ = [("BasicLimitInformation", Basic), ("IoInfo", IoCounters), ("ProcessMemoryLimit", ctypes.c_size_t),
+                    ("JobMemoryLimit", ctypes.c_size_t), ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+    job = kernel32.CreateJobObjectW(None, None)
+    if not job:
+        return None
+    info = Extended()
+    info.BasicLimitInformation.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    ok = kernel32.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info))  # 9 = JobObjectExtendedLimitInformation
+    ok = ok and kernel32.AssignProcessToJobObject(job, int(process._handle))
+    return job if ok else None
+
+
 def main(root: Path) -> int:
     root, state = Path(root), state_dir()
     already = running_port(state)
@@ -100,6 +138,7 @@ def main(root: Path) -> int:
     env = marimo_env(os.environ, state, choice)
     print(f"Starting the notebooks at http://localhost:{port} (close this window to stop them)")
     process = subprocess.Popen(build_command(root, port), env=env)
+    job = tie_to_this_process(process)  # noqa: F841  (kept alive on purpose: closing it ends the server)
     if wait_until_listening(port):
         webbrowser.open(f"http://localhost:{port}")
     try:
