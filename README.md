@@ -18,6 +18,8 @@ The course notebooks as a package students run on their own laptop: no Docker, n
 - Windows runs python.org's embeddable Python (its `python.exe` is signed by the Python Software Foundation; the unsigned
   python-build-standalone one is blocked by managed laptops' Defender policy, "Access is denied"); Mac keeps python-build-standalone.
   The build smoke-tests the built Python (`SMOKE_MODULES`) before it zips anything.
+- A student who said no to sharing has no course server in the analyst notebooks however they were started (`ak.course_server` reads
+  `~/.hs-marimo26/consent.json`), not only through the launcher.
 - `build/`: `build_runtime.py` makes the per-OS student zip, `make_notebooks_zip.py` the `notebooks.zip` of a release.
 - `.github/workflows/release.yml`: on a `v*` tag, builds the three student zips and `notebooks.zip` and drafts the release.
 
