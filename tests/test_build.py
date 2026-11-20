@@ -1,4 +1,7 @@
 import json
+import os
+import shutil
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -252,3 +255,104 @@ def test_start_command_unpacks_once_with_tar_and_passes_flags():
         assert expected in text, expected
     assert '"$RT.new"' in text and "python/bin/python3" in text  # unpacked beside the runtime, swapped in only when complete
     assert text.index("rm -rf \"$NEW\"") < text.index("/usr/bin/tar -xzf") < text.index("touch ") < text.index("mv ")
+
+# --- macOS: files that came in a download carry the "quarantine" flag --------------------------------------------------------------
+# A student's Mac refused every native file of the unpacked tools ("library load disallowed by system policy", one "Apple could not
+# verify ..." dialog per file, hundreds of them). They approved Start.command once; the tools unpacked from the same download must not
+# inherit the flag, and a runtime that already has it must be repaired. xattr is replaced by a logging stand-in (XATTR) in these tests.
+
+def find_bash():
+    """A bash that understands this machine's paths: on Windows Git's (the bash on the PATH there can be WSL's, which does not)."""
+    if sys.platform == "win32":
+        git = shutil.which("git")
+        for folder in Path(git).parents if git else []:  # git sits at Git\\cmd, Git\\bin or Git\\mingw64\\bin: look up from there
+            for relative in ("bin/bash.exe", "usr/bin/bash.exe"):
+                if (folder / relative).exists():
+                    return str(folder / relative)
+        return None
+    return shutil.which("bash")
+
+
+BASH = find_bash()
+needs_bash = pytest.mark.skipif(BASH is None, reason="no usable bash on this machine")
+FAKE_XATTR = (
+    b"#!/bin/bash\n"
+    b'echo "$@" >> "$XATTR_LOG"\n'
+    b'case "$1" in -p) exit "${FAKE_FLAGGED:-1}";; esac\n'
+    b"exit 0\n"
+)
+
+
+def mac_package(tmp_path):
+    """The real Start.command next to a tiny runtime archive, in a folder whose name has a space (as a student's often has)."""
+    import tarfile
+
+    package = tmp_path / "course tools"
+    package.mkdir()
+    shutil.copy(ROOT / "launcher" / "Start.command", package / "Start.command")
+    (package / "package-id.txt").write_text("1.2.3\n")
+    python = tmp_path / "rt" / "python" / "bin"
+    python.mkdir(parents=True)
+    (python / "python3").write_text("#!/bin/sh\n")
+    (python / "python3").chmod(0o755)
+    with tarfile.open(package / "runtime.tar.gz", "w:gz") as t:
+        t.add(tmp_path / "rt" / "python", arcname="python")
+    fake = tmp_path / "fake_xattr"
+    fake.write_bytes(FAKE_XATTR)
+    fake.chmod(0o755)
+    return package, fake
+
+
+def start_command(package, fake, home, log, flagged=False):
+    """One start of Start.command that stops after the setup (HS_SETUP_ONLY); returns the lines xattr was called with."""
+    env = {
+        **os.environ,
+        "HOME": home.as_posix(),
+        "XATTR": fake.as_posix(),
+        "XATTR_LOG": log.as_posix(),
+        "HS_SETUP_ONLY": "1",
+        "FAKE_FLAGGED": "0" if flagged else "1",
+    }
+    log.write_text("")
+    done = subprocess.run([BASH, (package / "Start.command").as_posix()], env=env, capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stdout + done.stderr
+    return [line.strip() for line in log.read_text().splitlines() if line.strip()]
+
+
+@needs_bash
+def test_start_command_clears_the_quarantine_flag_before_and_after_unpacking(tmp_path):
+    package, fake = mac_package(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    calls = start_command(package, fake, home, tmp_path / "log.txt")
+    assert calls[0].startswith("-dr com.apple.quarantine") and calls[0].endswith("course tools")  # before: the archive must not pass it on
+    assert any(c.startswith("-dr com.apple.quarantine") and c.endswith("hs-marimo26/runtime.new") for c in calls)  # after: whatever tar did
+    support = home / "Library" / "Application Support" / "hs-marimo26"
+    assert (support / "runtime" / "ready-1.2.3").exists() and (support / "runtime" / "python" / "bin" / "python3").exists()
+    assert not (support / "runtime.new").exists()
+
+
+@needs_bash
+def test_start_command_repairs_an_install_whose_native_files_are_still_flagged(tmp_path):
+    package, fake = mac_package(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    start_command(package, fake, home, tmp_path / "first.txt")  # a first start installs it
+    (package / "runtime.tar.gz").unlink()  # the second start must not need the archive: it is installed
+    calls = start_command(package, fake, home, tmp_path / "second.txt", flagged=True)
+    probe = next(i for i, c in enumerate(calls) if c.startswith("-p com.apple.quarantine") and c.endswith("runtime/python/bin/python3"))
+    repair = next(i for i, c in enumerate(calls) if c.startswith("-dr com.apple.quarantine") and c.endswith("hs-marimo26/runtime"))
+    assert probe < repair
+
+
+@needs_bash
+def test_start_command_leaves_a_clean_install_alone_and_does_not_unpack_again(tmp_path):
+    package, fake = mac_package(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    start_command(package, fake, home, tmp_path / "first.txt")
+    (package / "runtime.tar.gz").unlink()
+    calls = start_command(package, fake, home, tmp_path / "second.txt", flagged=False)
+    assert not any(c.endswith("hs-marimo26/runtime") for c in calls if c.startswith("-dr"))  # only the downloaded folder is cleared
+    assert any(c.startswith("-p com.apple.quarantine") for c in calls)  # one native file is looked at, which is cheap
+
