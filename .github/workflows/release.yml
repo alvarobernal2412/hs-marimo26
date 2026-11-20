@@ -51,13 +51,15 @@ jobs:
           # what a browser and Archive Utility do to a download: every file of it is flagged
           find . -type f -exec xattr -w com.apple.quarantine "0083;5f000000;Safari;" {} +
           mkdir home control
+          # how many files under $1 carry the flag (xattr exits non-zero for a file without it, which must not stop this script)
+          count_flagged() { { find "$1" -type f -exec xattr -p com.apple.quarantine {} + 2>/dev/null || true; } | wc -l | tr -d ' '; }
           # control, only reported: does this macOS's own tar hand the flag on to what it unpacks?
           /usr/bin/tar -xzf runtime.tar.gz -C control
-          echo "files that inherited the flag through tar: $(find control -type f -exec xattr -p com.apple.quarantine {} + 2>/dev/null | wc -l | tr -d ' ')"
+          echo "files that inherited the flag through tar: $(count_flagged control)"
           # the setup of Start.command itself (HS_SETUP_ONLY stops it before it starts the notebooks)
           HOME="$work/home" HS_SETUP_ONLY=1 ./Start.command
           runtime="$work/home/Library/Application Support/hs-marimo26/runtime"
-          flagged="$(find "$runtime" -type f -exec xattr -p com.apple.quarantine {} + 2>/dev/null | wc -l | tr -d ' ')"
+          flagged="$(count_flagged "$runtime")"
           echo "files still flagged after the setup: $flagged"
           test "$flagged" = "0"
           "$runtime/python/bin/python3" -s -c "import msgspec, pandas, marimo; print('the native files load')"
