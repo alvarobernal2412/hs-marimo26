@@ -4,9 +4,15 @@ The course notebooks as a package students run on their own laptop: no Docker, n
 
 - `notebooks/`: `lecture.py`, `initial-analysis.py`, `map-explorer.py` and what they share (`bpm_kit.py`, `lib/`, `data/`). `marimo run`
   serves them as a gallery of apps. The Dhana log is read from `data/dhana-loan-application-molab.xes`.
-- `launcher/`: `Start.bat` / `Start.command` (at the package root), `start.py` (update, ask for consent, start marimo, open the browser), `update.py`,
-  `consent.py` (the one-time consent page; the answer is kept in `~/.hs-marimo26/consent.json`; unless it is "accepted" the notebooks
-  run with `PMPROV_SYNC_URL=""`, i.e. without the course server; `Start --consent` asks again).
+- `launcher/`: `Start.bat` / `Start.command` (at the package root: unpack the runtime on the first start, then run `start.py`),
+  `Change-my-answer.bat` / `.command` (the same with `--consent`), `start.py` (update, ask for consent, start marimo, open the browser),
+  `update.py`, `consent.py` (the one-time consent page; the answer is kept in `~/.hs-marimo26/consent.json`; unless it is "accepted"
+  the notebooks run with `PMPROV_SYNC_URL=""`, i.e. without the course server; `--consent` asks again, and refuses while the notebooks run).
+- The student zip is two layers, so unzipping it is quick (Explorer's unzip is slow on tens of thousands of files): a few loose files
+  (`Start.*`, `Change-my-answer.*`, `launcher/`, `README-students.md`, `package-id.txt`) plus ONE runtime archive (`runtime.zip` on
+  Windows, `runtime.tar.gz` on Mac: `python/`, `notebooks/`, `version.json`). The first start unpacks it with the system's own `tar` into
+  `%LOCALAPPDATA%\hs-marimo26\runtime` (Windows) or `~/Library/Application Support/hs-marimo26/runtime` (Mac), marked by `ready-<version>`;
+  `start.py` and `update.py` work on that folder.
 - `build/`: `build_runtime.py` makes the per-OS student zip, `make_notebooks_zip.py` the `notebooks.zip` of a release.
 - `.github/workflows/release.yml`: on a `v*` tag, builds the three student zips and `notebooks.zip` and drafts the release.
 

@@ -182,6 +182,13 @@ def test_change_my_answer_scripts_call_start_with_consent():
     assert command.startswith("#!/bin/bash")
 
 
+def test_student_readme_has_no_terminal_instructions():
+    text = (ROOT / "launcher" / "README-students.md").read_text(encoding="utf8")
+    assert "Change-my-answer" in text
+    assert "--consent" not in text and "terminal" not in text.lower()  # students never open a terminal
+    assert "Documents" not in text  # the zip is small now and unpacks itself elsewhere; no folder advice that points into OneDrive
+
+
 def test_start_command_unpacks_once_with_tar_and_passes_flags():
     text = (ROOT / "launcher" / "Start.command").read_text(encoding="utf8")
     for expected in ("Library/Application Support/hs-marimo26/runtime", "package-id.txt", "ready-", "/usr/bin/tar -xzf", '"$@"'):
