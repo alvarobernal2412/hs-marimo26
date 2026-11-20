@@ -29,7 +29,7 @@ def test_find_python_asset_picks_install_only_for_target():
     assert br.find_python_asset(release, "aarch64-apple-darwin") == "mac"
 
 
-def build_package(tmp_path, os_name="windows-x64", version="1.2.3"):
+def build_package(tmp_path, os_name="windows-x64", version="1.2.3", build_id=""):
     """A tiny fake runtime run through the real assemble(); returns the outer zip's path."""
     python_dir = tmp_path / "py"
     (python_dir / "bin").mkdir(parents=True)
@@ -41,7 +41,7 @@ def build_package(tmp_path, os_name="windows-x64", version="1.2.3"):
     data = tmp_path / "data"
     data.mkdir()
     (data / "dhana-loan-application-molab.xes").write_text("X")
-    return br.assemble(ROOT, python_dir, data, tmp_path / "out", os_name=os_name, version=version)
+    return br.assemble(ROOT, python_dir, data, tmp_path / "out", os_name=os_name, version=version, build_id=build_id)
 
 
 def inner_zip(outer_path: Path, name: str = "runtime.zip") -> zipfile.ZipFile:
@@ -468,6 +468,13 @@ def test_the_package_ships_the_uninstall_script_of_each_system(tmp_path):
         assert "Uninstall.bat" in z.namelist() and "Uninstall.command" not in z.namelist()
     with zipfile.ZipFile(build_package(tmp_path / "mac", os_name="macos-arm64")) as z:
         assert "Uninstall.command" in z.namelist() and "Uninstall.bat" not in z.namelist()
+
+
+def test_the_package_id_names_the_build_when_there_is_one(tmp_path):
+    # a version published again must unpack again on a computer that already has it: the id names the build, the version stays plain
+    with zipfile.ZipFile(build_package(tmp_path, build_id="abc1234")) as z:
+        assert z.read("package-id.txt").decode("utf8").strip() == "1.2.3-abc1234"
+    assert json.loads(inner_zip(build_package(tmp_path / "again", build_id="abc1234")).read("version.json")) == {"version": "1.2.3"}
 
 
 def test_start_here_explains_how_to_remove_everything():
