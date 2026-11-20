@@ -164,3 +164,18 @@ def test_github_json_gives_up_after_the_attempts_and_does_not_retry_other_errors
     with pytest.raises(urllib.error.HTTPError):
         br.github_json("https://api.github.com/x", sleep=lambda seconds: None, opener=not_found)
     assert calls == [1]  # a 404 is not worth retrying
+
+
+def test_start_bat_unpacks_once_with_tar_and_passes_flags():
+    text = (ROOT / "launcher" / "Start.bat").read_text(encoding="utf8")
+    for expected in (r"%LOCALAPPDATA%\hs-marimo26\runtime", "package-id.txt", "ready-!PKG!", r"System32\tar.exe", "Expand-Archive", "%*"):
+        assert expected in text, expected  # System32's tar reads zip; a Git-for-Windows tar earlier on the PATH does not
+    assert "enabledelayedexpansion" in text  # a path with ")" in it must not close the batch block
+    assert text.index("-xf") < text.index("type nul")  # the marker is written last: a failed unpack leaves none
+
+
+def test_start_command_unpacks_once_with_tar_and_passes_flags():
+    text = (ROOT / "launcher" / "Start.command").read_text(encoding="utf8")
+    for expected in ("Library/Application Support/hs-marimo26/runtime", "package-id.txt", "ready-", "/usr/bin/tar -xzf", '"$@"'):
+        assert expected in text, expected
+    assert text.index("/usr/bin/tar -xzf") < text.index("touch ")
