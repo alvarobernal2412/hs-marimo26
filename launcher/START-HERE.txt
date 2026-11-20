@@ -26,7 +26,10 @@ MAC
     3. Scroll down. You see a message about "Start.command". Click "Open Anyway", then "Open".
        Your Mac may ask for your password.
     (On macOS 14 or older you can instead right-click "Start.command", choose "Open", then "Open" again.)
-  You only do this once.
+  You only do this once. After that first step no more permission questions should appear: Start.command clears the
+  "downloaded" mark that macOS puts on every file of a download (the mark is what makes macOS ask about each file), also for
+  Change-my-answer and Uninstall. If a window ever says "Apple could not verify ..." about some other file, click "Done"
+  (never "Move to Trash") and tell your teachers.
 
 
 STEP 3 - WAIT, THE FIRST TIME ONLY

@@ -40,6 +40,27 @@ jobs:
           RAW: ${{ inputs.version || github.ref_name }}
           GITHUB_TOKEN: ${{ github.token }}  # the runner's shared address is rate limited for anonymous API calls
         run: python build/build_runtime.py --os ${{ matrix.os }} --data-dir data-dl --out out --version "${RAW#v}"
+      - name: Check the Mac package opens without macOS prompts (the quarantine flag of a download)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          cd "$work"
+          unzip -q "$GITHUB_WORKSPACE"/out/hs-marimo26-v*-${{ matrix.os }}.zip
+          # what a browser and Archive Utility do to a download: every file of it is flagged
+          find . -type f -exec xattr -w com.apple.quarantine "0083;5f000000;Safari;" {} +
+          mkdir home control
+          # control, only reported: does this macOS's own tar hand the flag on to what it unpacks?
+          /usr/bin/tar -xzf runtime.tar.gz -C control
+          echo "files that inherited the flag through tar: $(find control -type f -exec xattr -p com.apple.quarantine {} + 2>/dev/null | wc -l | tr -d ' ')"
+          # the setup of Start.command itself (HS_SETUP_ONLY stops it before it starts the notebooks)
+          HOME="$work/home" HS_SETUP_ONLY=1 ./Start.command
+          runtime="$work/home/Library/Application Support/hs-marimo26/runtime"
+          flagged="$(find "$runtime" -type f -exec xattr -p com.apple.quarantine {} + 2>/dev/null | wc -l | tr -d ' ')"
+          echo "files still flagged after the setup: $flagged"
+          test "$flagged" = "0"
+          "$runtime/python/bin/python3" -s -c "import msgspec, pandas, marimo; print('the native files load')"
       - uses: actions/upload-artifact@v4
         with:
           name: zip-${{ matrix.os }}
