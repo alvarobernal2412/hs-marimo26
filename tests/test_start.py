@@ -96,3 +96,17 @@ def test_main_does_not_ask_for_consent_when_the_server_already_runs(tmp_path, mo
     monkeypatch.setattr(start.webbrowser, "open", lambda url: True)
     monkeypatch.setattr(consent, "ask", _must_not_ask)
     assert start.main(tmp_path) == 0
+
+
+def test_main_refuses_to_change_the_answer_while_the_notebooks_run(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["start.py", str(tmp_path), "--consent"])
+    monkeypatch.setattr(start, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(start, "running_port", lambda state: 2718)
+
+    def must_not_open(url):
+        raise AssertionError("no browser must open")
+
+    monkeypatch.setattr(start.webbrowser, "open", must_not_open)
+    monkeypatch.setattr(consent, "ask", _must_not_ask)
+    assert start.main(tmp_path) == 1
+    assert "Close the black window first, then double-click Change-my-answer again." in capsys.readouterr().out
