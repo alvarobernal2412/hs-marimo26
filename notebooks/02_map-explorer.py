@@ -3,7 +3,7 @@
 # dependencies = [
 #     "marimo>=0.25.2",
 #     "pmprov[duckdb,parquet,graph]>=0.10.0",
-#     "marimo-pmprov[pdf]>=0.13.0",
+#     "marimo-pmprov[pdf]>=0.14.0",
 #     "pandas>=3.1.0",
 #     "pyarrow>=15",
 #     "altair>=5.5",
@@ -27,7 +27,7 @@ def _(mo):
     mo.md(r"""
     # Map explorer
 
-    Your work is saved automatically. You can close this page and continue later with the same key. If marimo shows a message that something failed, or the page stops responding, reload the page: your work comes back as you left it.
+    Your work is saved automatically. You can close this page and continue later. If marimo shows a message that something failed, or the page stops responding, reload the page: your work comes back as you left it.
     """)
     return
 
@@ -47,7 +47,7 @@ def _():
     from tracker import init_marimo
     from provenance_widget.pmprov_adapter import PmprovAdapter
     from provenance_widget.widget import ProvenancePanel
-    from provenance_widget.display import show_chart, show_table
+    from provenance_widget.display import chart_snapshot, show_chart, show_table
     from provenance_widget.portable import relocate_artifacts
     from provenance_widget.repeats import describe_run
     from provenance_widget.sync import Sync
@@ -113,6 +113,7 @@ def _():
         SYNC_URL,
         Sync,
         ak,
+        chart_snapshot,
         describe_run,
         du,
         init_marimo,
@@ -207,7 +208,7 @@ def _(mo, save_tick, sync):
     save_tick  # runs again every few seconds
     _parts = []
     if sync is not None:
-        _kind = {"saved": "success", "idle": "neutral", "pending": "info"}.get(sync.status.state, "warn")
+        _kind = {"saved": "success", "idle": "neutral", "pending": "info", "conflict": "danger"}.get(sync.status.state, "warn")
         _parts.append(mo.callout(mo.md(sync.status.message), kind=_kind))
     mo.vstack(_parts + [save_tick.style(display="none")])  # the timer has to be on the page to tick, but it is not a control
     return
@@ -313,8 +314,16 @@ def _(ak, kit, map_figure, map_meta, mo, path_column, show_chart, state_of):
             mo.md(f"No event of these has a value for the attribute that makes up a path, so not drawn: {', '.join(f'`{a}`' for a in map_meta['left_out'])}."),
             kind="neutral",
         ) if map_meta["left_out"] else mo.md(""),
-        show_chart(mo.as_html(map_figure), artifact_id=state_of("map_figure"), artifact_name="process_map", figure=map_figure),
+        # shown without its picture for the report: drawing that takes a few seconds, and the next cell does it
+        show_chart(mo.as_html(map_figure), artifact_id=state_of("map_figure"), artifact_name="process_map"),
     ])
+    return
+
+
+@app.cell(hide_code=True)
+def _(chart_snapshot, map_figure, state_of):
+    # the map's picture for the report, made once the map is on the page; picking the map finds it
+    chart_snapshot(map_figure, artifact_id=state_of("map_figure"))
     return
 
 
