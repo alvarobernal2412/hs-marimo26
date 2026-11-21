@@ -22,6 +22,9 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import make_notebooks_zip  # noqa: E402
+
 TARGETS = {"windows-x64": "x86_64-pc-windows-msvc", "macos-arm64": "aarch64-apple-darwin", "macos-x64": "x86_64-apple-darwin"}
 # the files a student double-clicks, at the root of the zip: start the notebooks, change the consent answer, remove everything
 ROOT_SCRIPTS = {
@@ -113,7 +116,11 @@ def assemble(repo: Path, python_dir: Path, data_dir: Path, out_dir: Path, os_nam
     zip_path = out_dir / f"hs-marimo26-v{version}-{os_name}.zip"
     with tempfile.TemporaryDirectory() as tmp:
         runtime = Path(tmp) / RUNTIME_ARCHIVE[os_name]
-        write_runtime_archive(collect_runtime(repo, python_dir, data_dir), version, runtime)
+        # what the updater compares a later release with: the notebook files of this one, and the libraries it installs
+        listed = Path(tmp) / "manifest.json"
+        listed.write_text(json.dumps(make_notebooks_zip.manifest(repo / "notebooks", repo / "build" / "requirements.txt")), encoding="utf8")
+        entries = collect_runtime(repo, python_dir, data_dir) + [(listed, "manifest.json", 0o644)]
+        write_runtime_archive(entries, version, runtime)
         package_id = Path(tmp) / "package-id.txt"
         package_id.write_text((f"{version}-{build_id}" if build_id else version) + "\n", encoding="utf8")
         launcher = repo / "launcher"

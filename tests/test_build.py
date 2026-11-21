@@ -61,6 +61,17 @@ def test_outer_zip_has_only_the_expected_entries(tmp_path):
         }
 
 
+def test_the_runtime_lists_the_notebook_files_it_ships_and_the_libraries_they_were_made_for(tmp_path):
+    import make_notebooks_zip as mz
+
+    found = json.loads(inner_zip(build_package(tmp_path)).read("manifest.json"))
+    assert "00_lecture.py" in found["files"] and "lib/initial_analysis_kit.py" in found["files"]
+    assert not any(name.endswith(".xes") or name == "manifest.json" for name in found["files"])
+    assert found["requirements"] == mz.requirements_hash(ROOT / "build" / "requirements.txt")
+    mz.make_zip(ROOT / "notebooks", tmp_path / "notebooks.zip", ROOT / "build" / "requirements.txt")
+    assert json.loads(zipfile.ZipFile(tmp_path / "notebooks.zip").read("manifest.json")) == found  # an update compares the two
+
+
 def test_package_id_is_the_version(tmp_path):
     with zipfile.ZipFile(build_package(tmp_path)) as z:
         assert z.read("package-id.txt").decode("utf8").strip() == "1.2.3"
