@@ -15,6 +15,8 @@ import notice  # noqa: E402
 import update  # noqa: E402
 
 PREFERRED_PORT = 2718
+# tried in this order before any free port: the browser remembers the student's key per address, so the address should not change
+PORTS = tuple(range(PREFERRED_PORT, PREFERRED_PORT + 5))
 
 
 def state_dir() -> Path:
@@ -23,7 +25,7 @@ def state_dir() -> Path:
 
 
 def free_port(preferred: int = PREFERRED_PORT) -> int:
-    for candidate in (preferred, 0):
+    for candidate in (preferred, *(p for p in PORTS if p != preferred), 0):
         with socket.socket() as s:
             try:
                 s.bind(("127.0.0.1", candidate))

@@ -14,6 +14,25 @@ def test_free_port_skips_busy_port():
         assert start.free_port(port) != port
 
 
+def test_a_busy_port_falls_back_to_the_next_fixed_one_so_the_browser_keeps_what_it_remembered():
+    # the browser remembers the student's key per address: a port picked at random would forget it on every start
+    held = []
+    try:
+        for port in start.PORTS[:2]:
+            s = socket.socket()
+            try:
+                s.bind(("127.0.0.1", port))
+                s.listen()
+                held.append(s)
+            except OSError:
+                s.close()  # something else already has it, which is the same for this test
+        assert start.free_port() == start.PORTS[2]
+    finally:
+        for s in held:
+            s.close()
+    assert start.PORTS[0] == 2718 and len(start.PORTS) >= 5
+
+
 def test_free_port_returns_preferred_when_free():
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
