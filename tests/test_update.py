@@ -98,15 +98,22 @@ def test_parse_version_accepts_a_v_prefix_and_rejects_other_tags():
         assert update.parse_version(bad) is None
 
 
-def test_latest_release_reads_the_notebooks_zip_and_survives_errors():
-    data = {"tag_name": "v1.3.0", "assets": [
-        {"name": "hs-marimo26-v1.3.0-windows-x64.zip", "browser_download_url": "win"},
-        {"name": "notebooks.zip", "browser_download_url": "nb"},
-    ]}
-    assert update.latest_release("o/r", fetch=lambda url: data) == {"version": (1, 3, 0), "zip_url": "nb"}
-    assert update.latest_release("o/r", fetch=lambda url: {"tag_name": "datasets", "assets": []}) is None
+def test_latest_release_reads_the_public_latest_page_and_never_asks_the_api():
+    asked = []
+
+    def where(url):
+        asked.append(url)
+        return "https://github.com/o/r/releases/tag/v1.3.0"
+
+    assert update.latest_release("o/r", resolve=where) == {
+        "version": (1, 3, 0), "zip_url": "https://github.com/o/r/releases/download/v1.3.0/notebooks.zip"}
+    assert asked == ["https://github.com/o/r/releases/latest"]  # a page, not the API: no limit on requests for a classroom
+
+    assert update.latest_release("o/r", resolve=lambda url: "https://github.com/o/r/releases/tag/datasets") is None
+    assert update.latest_release("o/r", resolve=lambda url: "https://github.com/o/r/releases") is None  # nothing published yet
+    assert update.latest_release("o/r", resolve=lambda url: None) is None
 
     def boom(url):
         raise OSError("offline")
 
-    assert update.latest_release("o/r", fetch=boom) is None
+    assert update.latest_release("o/r", resolve=boom) is None

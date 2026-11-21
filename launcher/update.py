@@ -13,12 +13,13 @@ import re
 import shutil
 import sys
 import tempfile
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
 
 REPO = "alvarobernal2412/hs-marimo26"
-KEEP = ("data", "provenance")  # folders under notebooks/ that an update never touches
+KEEP = ("data", "provenance")  # folders under notebooks/ whose other files an update never touches
 TIMEOUT = 15
 Version = tuple[int, int, int]
 
@@ -37,10 +38,19 @@ def read_version(root: Path) -> Version:
         return (0, 0, 0)
 
 
-def urlopen_json(url: str):
-    request = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "hs-marimo26"})
-    with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-        return json.load(response)
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+def redirect_target(url: str) -> str | None:
+    """Where `url` redirects to, without going there."""
+    request = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "hs-marimo26"})
+    try:
+        with urllib.request.build_opener(_NoRedirect).open(request, timeout=TIMEOUT) as response:
+            return response.headers.get("Location")
+    except urllib.error.HTTPError as answer:  # a redirect that is not followed arrives as an "error" carrying the headers
+        return answer.headers.get("Location")
 
 
 def download_to(url: str, dest) -> None:
@@ -49,15 +59,18 @@ def download_to(url: str, dest) -> None:
         shutil.copyfileobj(response, out)
 
 
-def latest_release(repo: str = REPO, fetch=urlopen_json) -> dict | None:
-    """The latest published release as `{version, zip_url}`, or None (also on any error). Drafts and pre-releases never count."""
+def latest_release(repo: str = REPO, resolve=redirect_target) -> dict | None:
+    """The latest published release as `{version, zip_url}`, or None (also on any error). Drafts and pre-releases never count.
+
+    The public "latest release" page redirects to `.../tag/<version>`. That is not an API call, so a whole classroom behind one
+    address is never turned away for asking too often."""
     try:
-        item = fetch(f"https://api.github.com/repos/{repo}/releases/latest")
-        version = parse_version(item.get("tag_name", ""))
-        asset = next((a for a in item.get("assets", []) if a.get("name") == "notebooks.zip"), None)
-        if version is None or asset is None:
+        location = resolve(f"https://github.com/{repo}/releases/latest") or ""
+        tag = location.rsplit("/tag/", 1)[1] if "/tag/" in location else ""
+        version = parse_version(tag)
+        if version is None:
             return None
-        return {"version": version, "zip_url": asset["browser_download_url"]}
+        return {"version": version, "zip_url": f"https://github.com/{repo}/releases/download/{tag}/notebooks.zip"}
     except Exception:
         return None
 
