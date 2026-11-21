@@ -152,3 +152,15 @@ def test_a_list_can_never_remove_the_students_work_the_datasets_or_anything_outs
     assert update.apply_release(root, release((1, 1, 0)), downloader(payload)) == "updated"
     assert (root / "notebooks" / "data" / "big.xes").exists() and (root / "notebooks" / "provenance" / "work.db").exists()
     assert update.read_version(root) == (1, 1, 0)
+
+
+def test_notebooks_made_for_other_libraries_are_not_applied_whatever_their_version_says(tmp_path):
+    root = setup_root(tmp_path, "1.0.0")
+    (root / "manifest.json").write_text(manifest(["lecture.py"], requirements="aaa"))
+    payload = make_zip({"lecture.py": "needs a new library", "manifest.json": manifest(["lecture.py"], requirements="bbb")})
+
+    assert update.apply_release(root, release((1, 1, 0)), downloader(payload)) == "needs-package"
+
+    assert (root / "notebooks" / "lecture.py").read_text() == "old" and update.read_version(root) == (1, 0, 0)
+    same = make_zip({"lecture.py": "new", "manifest.json": manifest(["lecture.py"], requirements="aaa")})
+    assert update.apply_release(root, release((1, 1, 0)), downloader(same)) == "updated"

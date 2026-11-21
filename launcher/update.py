@@ -136,6 +136,10 @@ def apply_release(root: Path, release: dict, download=download_to) -> str:
                 if z.testzip() is not None:
                     return "failed"
                 after = read_manifest(z.read(MANIFEST)) if MANIFEST in z.namelist() else {}
+                if before.get("requirements") and after.get("requirements") and before["requirements"] != after["requirements"]:
+                    # these notebooks were made for other libraries than this bundle has: they would fail when they start
+                    print("A new version of the course package is available. Please paste the install line from START-HERE.txt again to download it.")
+                    return "needs-package"
                 staged = Path(tmp) / "staged"
                 z.extractall(staged)
             target = root / "notebooks"
