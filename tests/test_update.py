@@ -117,3 +117,38 @@ def test_latest_release_reads_the_public_latest_page_and_never_asks_the_api():
         raise OSError("offline")
 
     assert update.latest_release("o/r", resolve=boom) is None
+
+
+def manifest(files, requirements=None):
+    return json.dumps({"files": files, **({"requirements": requirements} if requirements else {})})
+
+
+def test_a_notebook_the_new_release_no_longer_has_is_removed_and_the_students_own_files_stay(tmp_path):
+    root = setup_root(tmp_path, "1.0.0")
+    nb = root / "notebooks"
+    (nb / "old_helper.py").write_text("x")
+    (nb / "mine.py").write_text("the student's own")
+    (root / "manifest.json").write_text(manifest(["lecture.py", "old_helper.py"]))
+    payload = make_zip({"00_lecture.py": "new", "manifest.json": manifest(["00_lecture.py"])})
+
+    assert update.apply_release(root, release((1, 1, 0)), downloader(payload)) == "updated"
+
+    assert sorted(p.name for p in nb.iterdir()) == ["00_lecture.py", "data", "mine.py", "provenance"]
+    assert json.loads((root / "manifest.json").read_text())["files"] == ["00_lecture.py"]  # what the next update compares with
+    assert (nb / "data" / "big.xes").read_text() == "DATA" and (nb / "provenance" / "work.db").read_text() == "WORK"
+
+
+def test_without_a_list_of_what_was_installed_nothing_is_removed(tmp_path):
+    root = setup_root(tmp_path, "1.0.0")
+    payload = make_zip({"00_lecture.py": "new", "manifest.json": manifest(["00_lecture.py"])})
+    assert update.apply_release(root, release((1, 1, 0)), downloader(payload)) == "updated"
+    assert (root / "notebooks" / "lecture.py").read_text() == "old"
+
+
+def test_a_list_can_never_remove_the_students_work_the_datasets_or_anything_outside_the_notebooks(tmp_path):
+    root = setup_root(tmp_path, "1.0.0")
+    (root / "manifest.json").write_text(manifest(["../version.json", "data/big.xes", "provenance/work.db", "/etc/x", ""]))
+    payload = make_zip({"lecture.py": "new", "manifest.json": manifest(["lecture.py"])})
+    assert update.apply_release(root, release((1, 1, 0)), downloader(payload)) == "updated"
+    assert (root / "notebooks" / "data" / "big.xes").exists() and (root / "notebooks" / "provenance" / "work.db").exists()
+    assert update.read_version(root) == (1, 1, 0)

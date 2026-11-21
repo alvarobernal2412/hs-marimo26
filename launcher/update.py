@@ -5,6 +5,10 @@ must always be able to start with the notebooks they already have.
 
 Versions are `MAJOR.MINOR.PATCH`. The bundle holds one (`version.json`). A release with the same MAJOR only changes the notebooks,
 so it is applied; a newer MAJOR changes the package itself (Python, libraries, data folder), so the student is told to paste the install line again (it downloads the new package).
+
+`manifest.json` (in the bundle, and in each release's `notebooks.zip`) lists the notebook files a release ships and a hash of the
+libraries they were made for. It is what lets an update remove a notebook that a release dropped, and refuse notebooks that need
+libraries this bundle does not have (a release that changed them without a new MAJOR).
 """
 from __future__ import annotations
 
@@ -20,6 +24,7 @@ from pathlib import Path
 
 REPO = "alvarobernal2412/hs-marimo26"
 KEEP = ("data", "provenance")  # folders under notebooks/ whose other files an update never touches
+MANIFEST = "manifest.json"
 TIMEOUT = 15
 Version = tuple[int, int, int]
 
@@ -36,6 +41,15 @@ def read_version(root: Path) -> Version:
         return parse_version(found["version"]) or (0, 0, 0)
     except (OSError, ValueError, KeyError):
         return (0, 0, 0)
+
+
+def read_manifest(text: str | bytes | None) -> dict:
+    """`{"files": [...], "requirements": "..."}` from a manifest's text; empty for none or one that cannot be read."""
+    try:
+        found = json.loads(text) if text else {}
+        return found if isinstance(found, dict) else {}
+    except ValueError:
+        return {}
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -75,6 +89,32 @@ def latest_release(repo: str = REPO, resolve=redirect_target) -> dict | None:
         return None
 
 
+def _shipped(names, notebooks: Path) -> list[Path]:
+    """The files under `notebooks` that a manifest names, leaving out anything an update must never remove: the kept folders, and
+    whatever is not plainly inside the notebooks folder."""
+    found = []
+    for name in names if isinstance(names, list) else []:
+        parts = Path(str(name)).parts
+        if not parts or parts[0] in KEEP or ".." in parts or Path(str(name)).is_absolute() or str(name).startswith(("/", "\\")):
+            continue
+        found.append(notebooks.joinpath(*parts))
+    return found
+
+
+def _remove_dropped(notebooks: Path, before: dict, after: dict) -> None:
+    """Delete the notebook files the installed release shipped and the new one does not. A file the student added was never in a
+    list, so it stays."""
+    still = set(_shipped(after.get("files"), notebooks))
+    for path in _shipped(before.get("files"), notebooks):
+        if path in still or not path.is_file():
+            continue
+        path.unlink()
+        folder = path.parent
+        while folder != notebooks and not any(folder.iterdir()):  # a folder left empty goes too
+            folder.rmdir()
+            folder = folder.parent
+
+
 def apply_release(root: Path, release: dict, download=download_to) -> str:
     """One of "updated", "current", "needs-package", "failed". The notebooks folder changes only after the whole zip checked out."""
     root = Path(root)
@@ -85,18 +125,23 @@ def apply_release(root: Path, release: dict, download=download_to) -> str:
         print("A new version of the course package is available. Please paste the install line from START-HERE.txt again to download it.")
         return "needs-package"
     try:
+        try:
+            before = read_manifest((root / MANIFEST).read_text(encoding="utf8"))
+        except OSError:
+            before = {}
         with tempfile.TemporaryDirectory() as tmp:
             archive = Path(tmp) / "notebooks.zip"
             download(release["zip_url"], archive)
             with zipfile.ZipFile(archive) as z:
                 if z.testzip() is not None:
                     return "failed"
+                after = read_manifest(z.read(MANIFEST)) if MANIFEST in z.namelist() else {}
                 staged = Path(tmp) / "staged"
                 z.extractall(staged)
             target = root / "notebooks"
             target.mkdir(exist_ok=True)
             for item in staged.iterdir():
-                if item.name in KEEP:
+                if item.name == MANIFEST or item.name in KEEP:
                     continue
                 destination = target / item.name
                 if destination.is_dir():
@@ -104,6 +149,10 @@ def apply_release(root: Path, release: dict, download=download_to) -> str:
                 elif destination.exists():
                     destination.unlink()
                 shutil.move(str(item), destination)
+            if before.get("files") and after.get("files"):
+                _remove_dropped(target, before, after)
+            if after:
+                (root / MANIFEST).write_text(json.dumps(after), encoding="utf8")
         (root / "version.json").write_text(json.dumps({"version": ".".join(map(str, wanted))}), encoding="utf8")
         return "updated"
     except Exception:
