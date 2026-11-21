@@ -145,9 +145,12 @@ def apply_release(root: Path, release: dict, download=download_to) -> str:
             target = root / "notebooks"
             target.mkdir(exist_ok=True)
             for item in staged.iterdir():
-                if item.name == MANIFEST or item.name in KEEP:
+                if item.name == MANIFEST or item.name == "provenance":
                     continue
                 destination = target / item.name
+                if item.name in KEEP:  # the datasets: the files of the release are added, the others stay as they are
+                    shutil.copytree(item, destination, dirs_exist_ok=True)
+                    continue
                 if destination.is_dir():
                     shutil.rmtree(destination)
                 elif destination.exists():

@@ -164,3 +164,12 @@ def test_notebooks_made_for_other_libraries_are_not_applied_whatever_their_versi
     assert (root / "notebooks" / "lecture.py").read_text() == "old" and update.read_version(root) == (1, 0, 0)
     same = make_zip({"lecture.py": "new", "manifest.json": manifest(["lecture.py"], requirements="aaa")})
     assert update.apply_release(root, release((1, 1, 0)), downloader(same)) == "updated"
+
+
+def test_a_new_small_dataset_arrives_and_the_other_files_of_the_data_folder_stay(tmp_path):
+    root = setup_root(tmp_path, "1.0.0")
+    payload = make_zip({"lecture.py": "new", "data/small.csv": "a,b", "manifest.json": manifest(["lecture.py", "data/small.csv"])})
+    assert update.apply_release(root, release((1, 1, 0)), downloader(payload)) == "updated"
+    assert (root / "notebooks" / "data" / "small.csv").read_text() == "a,b"
+    assert (root / "notebooks" / "data" / "big.xes").read_text() == "DATA"
+    assert not (root / "notebooks" / "manifest.json").exists()  # the list is the package's, not a notebook
