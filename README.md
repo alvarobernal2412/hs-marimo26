@@ -18,6 +18,10 @@ The course notebooks as a package students run on their own laptop: no Docker, n
 - Windows runs python.org's embeddable Python (its `python.exe` is signed by the Python Software Foundation; the unsigned
   python-build-standalone one is blocked by managed laptops' Defender policy, "Access is denied"); Mac keeps python-build-standalone.
   The build smoke-tests the built Python (`SMOKE_MODULES`) before it zips anything.
+- The Mac packages run on macOS 12 or later (`MAC_FLOOR`). pip on the build runner (macOS 15) picks the newest wheels that runner can
+  use, which are built for macOS 14 or 15 (numpy, scipy, cvxopt) and do not load on an older Mac. The build installs those packages
+  again in their build for macOS 12 or older, leaves out cvxopt, which has none (pm4py then solves with scipy), and stops if any
+  package is still too new (scipy's build for Apple chips is tagged macOS 12 but its files ask for 12.3). `install.sh` tells a student with an older macOS so, before it downloads anything.
 - `package-id.txt` is the version plus `-<first 7 characters of the commit>` (CI passes `--build-id`): a computer that already unpacked
   that id does not unpack again, so the same version published again needs a new id to reach it. `version.json` inside the runtime keeps
   the plain version, which is what the updater compares.

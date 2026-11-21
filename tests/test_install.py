@@ -14,8 +14,9 @@ POWERSHELL = shutil.which("powershell") if sys.platform == "win32" else None
 needs_powershell = pytest.mark.skipif(POWERSHELL is None, reason="Windows PowerShell only")
 
 
-def run_sh(zip_path, dest, arch="arm64"):
-    env = {**os.environ, "HS_PACKAGE_URL": Path(zip_path).as_posix(), "HS_DEST": dest.as_posix(), "HS_ARCH": arch, "HS_NO_START": "1"}
+def run_sh(zip_path, dest, arch="arm64", macos="15.1"):
+    env = {**os.environ, "HS_PACKAGE_URL": Path(zip_path).as_posix(), "HS_DEST": dest.as_posix(), "HS_ARCH": arch, "HS_NO_START": "1",
+           "HS_MACOS": macos}
     return subprocess.run([BASH, (ROOT / "launcher" / "install.sh").as_posix()], env=env, capture_output=True, text=True, timeout=120)
 
 
@@ -55,6 +56,18 @@ def test_install_sh_refuses_an_unknown_mac_type_and_creates_nothing(tmp_path):
     assert done.returncode == 1
     assert "not supported" in done.stdout
     assert not dest.exists()
+
+
+@needs_bash
+def test_install_sh_refuses_a_macos_older_than_the_libraries_are_built_for(tmp_path):
+    package = build_package(tmp_path / "build", os_name="macos-arm64")
+    dest = tmp_path / "hs-marimo26"
+    done = run_sh(package, dest, macos="11.7.10")
+    assert done.returncode == 1
+    assert "macOS 11.7.10" in done.stdout and "macOS 12" in done.stdout
+    assert not dest.exists()
+    assert run_sh(package, dest, macos="12.0").returncode == 0  # the oldest one the build targets
+    assert run_sh(package, tmp_path / "unknown", macos="").returncode == 0  # a version that cannot be read is let through
 
 
 @needs_bash

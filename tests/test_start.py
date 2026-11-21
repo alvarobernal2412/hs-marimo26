@@ -128,7 +128,12 @@ def test_main_refuses_to_change_the_answer_while_the_notebooks_run(tmp_path, mon
     monkeypatch.setattr(start.webbrowser, "open", must_not_open)
     monkeypatch.setattr(consent, "ask", _must_not_ask)
     assert start.main(tmp_path) == 1
-    assert "Close the black window first, then double-click Change-my-answer again." in capsys.readouterr().out
+    assert f"Close the {start.window_name()} first, then double-click Change-my-answer again." in capsys.readouterr().out
+
+
+def test_the_window_to_close_is_named_as_each_system_shows_it():
+    assert start.window_name("win32") == "black window"
+    assert start.window_name("darwin") == "Terminal window"  # a Mac's Terminal is not black
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="job objects are a Windows feature")

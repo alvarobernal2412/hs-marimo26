@@ -134,12 +134,17 @@ def tie_to_this_process(process):
     return job if ok else None
 
 
+def window_name(platform: str = sys.platform) -> str:
+    """What a student sees the launcher's window as: black on Windows, the Terminal on a Mac."""
+    return "black window" if platform == "win32" else "Terminal window"
+
+
 def main(root: Path) -> int:
     root, state = Path(root), state_dir()
     already = running_port(state)
     if already and "--consent" in sys.argv[2:]:
         # the running notebooks keep the answer they started with: it can only change on a fresh start
-        print("Close the black window first, then double-click Change-my-answer again.")
+        print(f"Close the {window_name()} first, then double-click Change-my-answer again.")
         return 1
     if already:
         print(f"The notebooks are already running; opening http://localhost:{already}")

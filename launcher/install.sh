@@ -26,6 +26,20 @@ main() {
     *) echo "This Mac type ($arch) is not supported. Please tell your teachers."; return 1 ;;
   esac
 
+  # the package's libraries are built for macOS 12 or later (MAC_FLOOR in build/build_runtime.py): say so before the long download,
+  # instead of notebooks that do not start. A version that cannot be read (HS_MACOS overrides it, for tests) is let through.
+  local macos="${HS_MACOS:-$(sw_vers -productVersion 2>/dev/null)}"
+  case "${macos%%.*}" in
+    '' | *[!0-9]*) ;;
+    *)
+      if [ "${macos%%.*}" -lt 12 ]; then
+        echo "This Mac runs macOS $macos. The course tools need macOS 12 (Monterey) or later."
+        echo "Update macOS (Apple menu > System Settings or System Preferences > Software Update), or tell your teachers."
+        return 1
+      fi
+      ;;
+  esac
+
   url="${HS_PACKAGE_URL:-}"
   if [ -z "$url" ]; then
     echo "Looking for the latest version of the course tools..."

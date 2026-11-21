@@ -39,6 +39,15 @@ RELEASES = "https://api.github.com/repos/astral-sh/python-build-standalone/relea
 PYTHON_ORG_FTP = "https://www.python.org/ftp/python"
 GET_PIP = "https://bootstrap.pypa.io/get-pip.py"
 # what the notebooks import (`provenance_widget` is the module of the marimo-pmprov package)
+# The oldest macOS a Mac package must run on. pip on the build runner takes the newest wheel that runner's own macOS can use, so a
+# package built on macOS 15 carried numpy and scipy built for macOS 14 and cvxopt built for macOS 15: a student's older Mac could
+# not load them, and then no notebook starts. After the install, every package built for a newer macOS than this is installed
+# again in its build for this one.
+MAC_FLOOR = (12, 0)
+MAC_ARCH = {"macos-arm64": "arm64", "macos-x64": "x86_64"}
+# Packages with no build for MAC_FLOOR that the notebooks do without: left out of the Mac packages. pm4py uses cvxopt only when it
+# is installed (pm4py/util/lp/solver.py) and solves with scipy otherwise.
+MAC_LEFT_OUT = ("cvxopt",)
 SMOKE_MODULES = ("marimo", "pandas", "pyarrow", "altair", "vegafusion", "plotly", "networkx", "pm4py",
                  "provenance_widget.widget", "provenance_widget.sync")
 
@@ -220,6 +229,47 @@ def download_python(target: str, dest: Path) -> Path:
     return download_standalone(target, dest)
 
 
+def wheel_macos_version(wheel_text: str) -> tuple[int, int] | None:
+    """The macOS a wheel was built for, from the `Tag:` lines of its WHEEL file: the oldest of them when it has several (any one
+    of them is enough to run it). None for a wheel that is not built for a macOS (pure Python)."""
+    found = [(int(major), int(minor)) for major, minor in re.findall(r"^Tag:.*-macosx_(\d+)_(\d+)_", wheel_text, flags=re.MULTILINE)]
+    return min(found) if found else None
+
+
+def built_for_newer_macos(site_packages: Path, floor: tuple[int, int] = MAC_FLOOR) -> list[tuple[str, str, tuple[int, int]]]:
+    """The installed packages built for a newer macOS than `floor`, as (name, version, that macOS)."""
+    newer = []
+    for wheel in sorted(Path(site_packages).glob("*.dist-info/WHEEL")):
+        needs = wheel_macos_version(wheel.read_text(encoding="utf8"))
+        if needs is None or needs <= floor:
+            continue
+        metadata = (wheel.parent / "METADATA").read_text(encoding="utf8")
+        name = re.search(r"^Name: *(.+)$", metadata, flags=re.MULTILINE)[1].strip()
+        version = re.search(r"^Version: *(.+)$", metadata, flags=re.MULTILINE)[1].strip()
+        newer.append((name, version, needs))
+    return newer
+
+
+def retarget_for_older_macs(interpreter: Path, site_packages: Path, os_name: str, run=subprocess.run) -> None:
+    """Replaces every package built for a newer macOS than MAC_FLOOR by the same version built for MAC_FLOOR (or older), and leaves
+    out the ones in MAC_LEFT_OUT. Stops the build when a package is still too new afterwards, so it never reaches a student."""
+    platform = f"macosx_{MAC_FLOOR[0]}_{MAC_FLOOR[1]}_{MAC_ARCH[os_name]}"
+    pip = [str(interpreter), "-s", "-m", "pip"]
+    for name, version, needs in built_for_newer_macos(site_packages):
+        print(f"{name} {version} was built for macOS {needs[0]}.{needs[1]}: ", end="", flush=True)
+        run([*pip, "uninstall", "--yes", name], check=True)
+        if name.lower() in MAC_LEFT_OUT:
+            print("left out of the Mac package")
+            continue
+        print(f"installing its build for macOS {MAC_FLOOR[0]}.{MAC_FLOOR[1]}")
+        # --platform also accepts the wheels of every older macOS; it needs --target, and no dependencies (they are installed)
+        run([*pip, "install", "--no-warn-script-location", "--no-deps", "--only-binary=:all:", "--platform", platform,
+             "--target", str(site_packages), f"{name}=={version}"], check=True)
+    still = built_for_newer_macos(site_packages)
+    if still:
+        raise SystemExit(f"built for a newer macOS than {MAC_FLOOR[0]}.{MAC_FLOOR[1]}: " + ", ".join(f"{n} {v}" for n, v, _ in still))
+
+
 def smoke_test(interpreter: Path, modules: tuple[str, ...] = SMOKE_MODULES) -> None:
     """Starts the built Python and imports what the notebooks need, so a broken runtime fails the build, not a student's first start."""
     subprocess.run([str(interpreter), "-s", "-c", "import " + ", ".join(modules)], check=True)
@@ -238,6 +288,8 @@ def main() -> int:
         python_dir = download_python(TARGETS[args.os], Path(tmp))
         interpreter = python_dir / ("python.exe" if args.os == "windows-x64" else "bin/python3")
         subprocess.run([str(interpreter), "-s", "-m", "pip", "install", "--no-warn-script-location", "-r", str(repo / "build" / "requirements.txt")], check=True)
+        if args.os in MAC_ARCH:
+            retarget_for_older_macs(interpreter, next((python_dir / "lib").glob("python3.*/site-packages")), args.os)
         smoke_test(interpreter)
         # the datasets of the zip: the big .xes from the data release, plus the csv made from the parquet the notebooks use
         datasets = Path(tmp) / "datasets"

@@ -248,6 +248,54 @@ def test_smoke_test_passes_for_importable_modules_and_fails_for_missing_ones():
         br.smoke_test(Path(sys.executable), modules=("no_such_module_for_the_smoke_test",))
 
 
+def _installed(site_packages, name, version, *tags):
+    info = site_packages / f"{name}-{version}.dist-info"
+    info.mkdir(parents=True)
+    (info / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n", encoding="utf8")
+    (info / "WHEEL").write_text("Wheel-Version: 1.0\n" + "".join(f"Tag: {tag}\n" for tag in tags), encoding="utf8")
+    return info
+
+
+def test_wheel_macos_version_reads_the_oldest_macos_of_a_wheel():
+    assert br.wheel_macos_version("Tag: cp313-cp313-macosx_14_0_arm64\n") == (14, 0)
+    assert br.wheel_macos_version("Tag: cp313-cp313-macosx_10_13_x86_64\nTag: cp313-cp313-macosx_11_0_arm64\n") == (10, 13)
+    assert br.wheel_macos_version("Tag: py3-none-any\n") is None  # pure Python runs anywhere
+    assert br.wheel_macos_version("Tag: cp313-cp313-win_amd64\n") is None
+
+
+def test_built_for_newer_macos_lists_only_packages_above_the_floor(tmp_path):
+    _installed(tmp_path, "numpy", "2.5.5", "cp313-cp313-macosx_14_0_arm64")
+    _installed(tmp_path, "pyarrow", "22.0.0", "cp313-cp313-macosx_12_0_arm64")
+    _installed(tmp_path, "marimo", "0.25.2", "py3-none-any")
+    assert br.built_for_newer_macos(tmp_path) == [("numpy", "2.5.5", (14, 0))]
+
+
+def test_retarget_installs_the_older_build_and_leaves_out_what_has_none(tmp_path):
+    numpy = _installed(tmp_path, "numpy", "2.5.5", "cp313-cp313-macosx_14_0_arm64")
+    cvxopt = _installed(tmp_path, "cvxopt", "1.3.3", "cp313-cp313-macosx_15_0_arm64")
+    calls = []
+
+    def fake_pip(command, check):
+        calls.append(command[3:])  # after: python -s -m
+        if command[4] == "uninstall":
+            shutil.rmtree(numpy if command[-1] == "numpy" else cvxopt)
+        else:
+            _installed(tmp_path, "numpy", "2.5.5", "cp313-cp313-macosx_11_0_arm64")
+
+    br.retarget_for_older_macs(Path("python3"), tmp_path, "macos-arm64", run=fake_pip)
+    assert ["pip", "uninstall", "--yes", "cvxopt"] in calls and ["pip", "uninstall", "--yes", "numpy"] in calls
+    installs = [c for c in calls if c[1] == "install"]
+    assert len(installs) == 1  # cvxopt has no build for an older macOS: it is left out, not installed again
+    assert installs[0][-1] == "numpy==2.5.5" and "macosx_12_0_arm64" in installs[0] and "--no-deps" in installs[0]
+    assert br.built_for_newer_macos(tmp_path) == []
+
+
+def test_retarget_stops_the_build_when_a_package_is_still_too_new(tmp_path):
+    _installed(tmp_path, "scipy", "1.18.1", "cp313-cp313-macosx_14_0_x86_64")
+    with pytest.raises(SystemExit, match="scipy 1.18.1"):
+        br.retarget_for_older_macs(Path("python3"), tmp_path, "macos-x64", run=lambda command, check: None)
+
+
 def test_start_here_explains_stopping_sleeping_and_restarting():
     text = (ROOT / "launcher" / "START-HERE.txt").read_text(encoding="utf8")
     for expected in ("STOPPING, AND STARTING AGAIN", "SLEEP", "SHUTS DOWN", "nothing keeps running in the background",

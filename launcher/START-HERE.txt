@@ -97,6 +97,8 @@ IF SOMETHING GOES WRONG
     Windows: %LOCALAPPDATA%\hs-marimo26
     Mac:     ~/Library/Application Support/hs-marimo26
   Nothing in it needs administrator rights.
+- "This Mac runs macOS ... The course tools need macOS 12 (Monterey) or later": update macOS
+  (Apple menu > System Settings or System Preferences > Software Update) and paste the line again.
 - Still stuck? Take a photo of the window and send it to your teachers.
 
 
