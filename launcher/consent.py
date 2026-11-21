@@ -71,6 +71,8 @@ PAGE_HTML = """<!doctype html>
       <li>It is used for two things: 1. improving the course; 2. research on tools that support and improve exploratory analysis.</li>
       <li>It is <b>optional</b>. If you say no, everything works the same, your work just stays on your computer.</li>
       <li>You are asked only once. You can change your mind any time by double-clicking <b>Change-my-answer</b> in the course folder.</li>
+      <li>If you change your answer later, the work you did before is kept where it was (on your computer, or on the course
+          server), and the notebooks start again from an empty history.</li>
     </ul>
   </details>
   <div class="buttons">

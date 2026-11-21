@@ -169,3 +169,11 @@ def test_decline_sits_left_of_accept_and_accept_keeps_the_focus():
     assert html.index('id="decline"') < html.index('id="accept"')  # decline first (left), accept last (right), in one row
     assert 'id="accept" autofocus' in html  # the focus is still on accept, whichever side it is on
     assert "#accept { order: -1; }" in html  # stacked on a narrow screen, accept comes first, as the main choice
+
+
+def test_page_says_what_happens_to_earlier_work_when_the_answer_changes(tmp_path):
+    asked = Asked(tmp_path)
+    html = asked.get()
+    asked.answer("declined")
+    asked.finish()
+    assert "change your answer" in html and "start again from an empty history" in html and "is kept" in html
