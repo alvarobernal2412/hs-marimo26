@@ -29,6 +29,11 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
+      - name: Check the libraries did not change without a new MAJOR version
+        shell: bash
+        env:
+          RAW: ${{ inputs.version || github.ref_name }}
+        run: python build/check_release.py --version "${RAW#v}"
       - name: Download the big datasets (release "datasets")
         shell: bash
         env:
