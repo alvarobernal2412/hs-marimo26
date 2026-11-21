@@ -57,7 +57,7 @@ def test_outer_zip_has_only_the_expected_entries(tmp_path):
     with zipfile.ZipFile(zip_path) as z:
         assert set(z.namelist()) == {
             "Start.bat", "Change-my-answer.bat", "Uninstall.bat", "START-HERE.txt", "package-id.txt", "runtime.zip",
-            "launcher/start.py", "launcher/update.py", "launcher/consent.py",
+            "launcher/start.py", "launcher/update.py", "launcher/consent.py", "launcher/notice.py",
         }
 
 

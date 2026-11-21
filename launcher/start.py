@@ -11,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import consent  # noqa: E402
+import notice  # noqa: E402
 import update  # noqa: E402
 
 PREFERRED_PORT = 2718
@@ -60,6 +61,17 @@ def resolve_consent(state: Path, force: bool, ask=consent.ask) -> str:
         return ask(state)
     except Exception:  # like the updater: whatever goes wrong, the student can still start (local-only, asked again next time)
         return "undecided"
+
+
+def tell_about_new_package(result: str, show=notice.show) -> None:
+    """When the update found a release that needs a new package, say so in the browser before the notebooks open. Whatever goes
+    wrong with the page, the student still starts."""
+    if result != "needs-package":
+        return
+    try:
+        show()
+    except Exception:
+        pass
 
 
 def marimo_env(base: dict, state: Path, choice: str) -> dict:
@@ -131,7 +143,7 @@ def main(root: Path) -> int:
         print(f"The notebooks are already running; opening http://localhost:{already}")
         webbrowser.open(f"http://localhost:{already}")
         return 0
-    update.main(root)
+    tell_about_new_package(update.check(root))
     choice = resolve_consent(state, force="--consent" in sys.argv[2:])
     port = free_port()
     remember_port(state, port)

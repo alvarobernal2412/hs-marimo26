@@ -173,3 +173,14 @@ def test_a_new_small_dataset_arrives_and_the_other_files_of_the_data_folder_stay
     assert (root / "notebooks" / "data" / "small.csv").read_text() == "a,b"
     assert (root / "notebooks" / "data" / "big.xes").read_text() == "DATA"
     assert not (root / "notebooks" / "manifest.json").exists()  # the list is the package's, not a notebook
+
+
+def test_check_says_what_happened_so_the_launcher_can_tell_the_student(tmp_path):
+    root = setup_root(tmp_path, "1.0.0")
+    assert update.check(root, find=lambda: {"version": (2, 0, 0), "zip_url": "x"}) == "needs-package"
+    assert update.check(root, find=lambda: None) == "unknown"
+
+    def boom():
+        raise OSError("offline")
+
+    assert update.check(root, find=boom) == "unknown"

@@ -166,13 +166,17 @@ def apply_release(root: Path, release: dict, download=download_to) -> str:
         return "failed"
 
 
-def main(root: Path) -> int:
+def check(root: Path, find=latest_release) -> str:
+    """Update if there is something newer; says what happened: `apply_release`'s answer, or "unknown" (no release was found)."""
     try:
-        release = latest_release()
-        if release:
-            apply_release(Path(root), release)
+        release = find()
+        return apply_release(Path(root), release) if release else "unknown"
     except Exception:
-        pass
+        return "unknown"
+
+
+def main(root: Path) -> int:
+    check(root)
     return 0
 
 
