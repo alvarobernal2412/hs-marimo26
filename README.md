@@ -20,8 +20,10 @@ The course notebooks as a package students run on their own laptop: no Docker, n
   The build smoke-tests the built Python (`SMOKE_MODULES`) before it zips anything.
 - The Mac packages run on macOS 12 or later (`MAC_FLOOR`). pip on the build runner (macOS 15) picks the newest wheels that runner can
   use, which are built for macOS 14 or 15 (numpy, scipy, cvxopt) and do not load on an older Mac. The build installs those packages
-  again in their build for macOS 12 or older, leaves out cvxopt, which has none (pm4py then solves with scipy), and stops if any
-  package is still too new (scipy's build for Apple chips is tagged macOS 12 but its files ask for 12.3). `install.sh` tells a student with an older macOS so, before it downloads anything.
+  again in their build for macOS 12 or older and stops if any package is still too new (scipy's build for Apple chips is tagged
+  macOS 12 but its files ask for 12.3). `install.sh` tells a student with an older macOS so, before it downloads anything.
+- cvxopt is left out of every package (`LEFT_OUT`): it has no build for macOS 12, and pm4py uses it only when it is installed and
+  solves with scipy otherwise. Leaving it out on Windows too gives every student the same solver.
 - `package-id.txt` is the version plus `-<first 7 characters of the commit>` (CI passes `--build-id`): a computer that already unpacked
   that id does not unpack again, so the same version published again needs a new id to reach it. `version.json` inside the runtime keeps
   the plain version, which is what the updater compares.

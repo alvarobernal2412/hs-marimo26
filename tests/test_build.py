@@ -270,23 +270,30 @@ def test_built_for_newer_macos_lists_only_packages_above_the_floor(tmp_path):
     assert br.built_for_newer_macos(tmp_path) == [("numpy", "2.5.5", (14, 0))]
 
 
-def test_retarget_installs_the_older_build_and_leaves_out_what_has_none(tmp_path):
+def test_leave_out_uninstalls_cvxopt_on_every_system():
+    calls = []
+    br.leave_out(Path("python3"), run=lambda command, check: calls.append((command, check)))
+    assert calls == [(["python3", "-s", "-m", "pip", "uninstall", "--yes", "cvxopt"], True)]
+    main = (ROOT / "build" / "build_runtime.py").read_text(encoding="utf8")
+    # for every system, and before the smoke test: what is tested is what a student gets
+    assert main.index("        leave_out(interpreter)") < main.index("        if args.os in MAC_ARCH:") < main.index("        smoke_test(interpreter)")
+
+
+def test_retarget_installs_the_older_build_of_a_package_built_for_a_newer_macos(tmp_path):
     numpy = _installed(tmp_path, "numpy", "2.5.5", "cp313-cp313-macosx_14_0_arm64")
-    cvxopt = _installed(tmp_path, "cvxopt", "1.3.3", "cp313-cp313-macosx_15_0_arm64")
     calls = []
 
     def fake_pip(command, check):
         calls.append(command[3:])  # after: python -s -m
         if command[4] == "uninstall":
-            shutil.rmtree(numpy if command[-1] == "numpy" else cvxopt)
+            shutil.rmtree(numpy)
         else:
             _installed(tmp_path, "numpy", "2.5.5", "cp313-cp313-macosx_11_0_arm64")
 
     br.retarget_for_older_macs(Path("python3"), tmp_path, "macos-arm64", run=fake_pip)
-    assert ["pip", "uninstall", "--yes", "cvxopt"] in calls and ["pip", "uninstall", "--yes", "numpy"] in calls
-    installs = [c for c in calls if c[1] == "install"]
-    assert len(installs) == 1  # cvxopt has no build for an older macOS: it is left out, not installed again
-    assert installs[0][-1] == "numpy==2.5.5" and "macosx_12_0_arm64" in installs[0] and "--no-deps" in installs[0]
+    assert calls[0] == ["pip", "uninstall", "--yes", "numpy"]
+    assert len(calls) == 2 and calls[1][1] == "install"
+    assert calls[1][-1] == "numpy==2.5.5" and "macosx_12_0_arm64" in calls[1] and "--no-deps" in calls[1]
     assert br.built_for_newer_macos(tmp_path) == []
 
 

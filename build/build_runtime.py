@@ -45,9 +45,10 @@ GET_PIP = "https://bootstrap.pypa.io/get-pip.py"
 # again in its build for this one.
 MAC_FLOOR = (12, 0)
 MAC_ARCH = {"macos-arm64": "arm64", "macos-x64": "x86_64"}
-# Packages with no build for MAC_FLOOR that the notebooks do without: left out of the Mac packages. pm4py uses cvxopt only when it
-# is installed (pm4py/util/lp/solver.py) and solves with scipy otherwise.
-MAC_LEFT_OUT = ("cvxopt",)
+# Packages left out of every package. cvxopt has no build for MAC_FLOOR, and pm4py uses it only when it is installed
+# (pm4py/util/lp/solver.py) and solves with scipy otherwise: it is left out on Windows too, so that a student gets the same
+# solver, and so the same results, on every system.
+LEFT_OUT = ("cvxopt",)
 SMOKE_MODULES = ("marimo", "pandas", "pyarrow", "altair", "vegafusion", "plotly", "networkx", "pm4py",
                  "provenance_widget.widget", "provenance_widget.sync")
 
@@ -250,18 +251,22 @@ def built_for_newer_macos(site_packages: Path, floor: tuple[int, int] = MAC_FLOO
     return newer
 
 
+def leave_out(interpreter: Path, names: tuple[str, ...] = LEFT_OUT, run=subprocess.run) -> None:
+    """Removes the packages of LEFT_OUT, which pip installed because another package asks for them."""
+    for name in names:
+        print(f"leaving {name} out of the package", flush=True)
+        run([str(interpreter), "-s", "-m", "pip", "uninstall", "--yes", name], check=True)
+
+
 def retarget_for_older_macs(interpreter: Path, site_packages: Path, os_name: str, run=subprocess.run) -> None:
-    """Replaces every package built for a newer macOS than MAC_FLOOR by the same version built for MAC_FLOOR (or older), and leaves
-    out the ones in MAC_LEFT_OUT. Stops the build when a package is still too new afterwards, so it never reaches a student."""
+    """Replaces every package built for a newer macOS than MAC_FLOOR by the same version built for MAC_FLOOR (or older). Stops the
+    build when a package is still too new afterwards (it has no such build), so it never reaches a student."""
     platform = f"macosx_{MAC_FLOOR[0]}_{MAC_FLOOR[1]}_{MAC_ARCH[os_name]}"
     pip = [str(interpreter), "-s", "-m", "pip"]
     for name, version, needs in built_for_newer_macos(site_packages):
-        print(f"{name} {version} was built for macOS {needs[0]}.{needs[1]}: ", end="", flush=True)
+        print(f"{name} {version} was built for macOS {needs[0]}.{needs[1]}: installing its build for macOS {MAC_FLOOR[0]}.{MAC_FLOOR[1]}",
+              flush=True)
         run([*pip, "uninstall", "--yes", name], check=True)
-        if name.lower() in MAC_LEFT_OUT:
-            print("left out of the Mac package")
-            continue
-        print(f"installing its build for macOS {MAC_FLOOR[0]}.{MAC_FLOOR[1]}")
         # --platform also accepts the wheels of every older macOS; it needs --target, and no dependencies (they are installed)
         run([*pip, "install", "--no-warn-script-location", "--no-deps", "--only-binary=:all:", "--platform", platform,
              "--target", str(site_packages), f"{name}=={version}"], check=True)
@@ -288,6 +293,7 @@ def main() -> int:
         python_dir = download_python(TARGETS[args.os], Path(tmp))
         interpreter = python_dir / ("python.exe" if args.os == "windows-x64" else "bin/python3")
         subprocess.run([str(interpreter), "-s", "-m", "pip", "install", "--no-warn-script-location", "-r", str(repo / "build" / "requirements.txt")], check=True)
+        leave_out(interpreter)
         if args.os in MAC_ARCH:
             retarget_for_older_macs(interpreter, next((python_dir / "lib").glob("python3.*/site-packages")), args.os)
         smoke_test(interpreter)
