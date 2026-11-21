@@ -47,8 +47,15 @@ A release holds the three student zips (`hs-marimo26-v<version>-windows-x64.zip`
 
 | Bump | When | What students do |
 |---|---|---|
-| MAJOR | the package changes: Python, libraries, the data folder | paste the install line again (their launcher tells them) |
-| MINOR or PATCH | only `notebooks/` changes | nothing: it updates on the next start |
+| MAJOR | the package changes: Python, libraries (`build/requirements.txt`), the launcher | paste the install line again (a page in their browser tells them, with the line to copy) |
+| MINOR or PATCH | only `notebooks/` changes: notebooks added, changed or removed, small data files added | nothing: it updates on the next start |
+
+Both the package and `notebooks.zip` carry a `manifest.json`: the notebook files the release ships and a hash of
+`build/requirements.txt`. With it a launcher removes a notebook that a release dropped (never a file the student added), and does
+not apply notebooks made for other libraries than it has: it shows the "new version" page instead. The release workflow refuses to
+build a MINOR or PATCH whose libraries differ from the published release (`build/check_release.py`), so the number is right
+before any student is affected. The launcher finds the latest release from the public release page, not the GitHub API, so a
+classroom behind one address is never rate limited.
 
 To release: `git tag v1.1.0 && git push origin v1.1.0` (or run the *release* workflow by hand with a version). CI builds everything and
 leaves a **draft**. Download the zips from the draft and try them, then press **Publish release**: only then do students and launchers
@@ -57,8 +64,11 @@ see it. A launcher applies the latest release when it has the same MAJOR as the 
 The two Dhana `.xes` logs are too big for git. They live as files of the release tagged `datasets` (replace the files there when
 the logs change); the build puts them into every student zip, together with a `.csv` made from the parquet the notebooks read.
 
-Students' own files stay outside the package: `~/.hs-marimo26/` (work saved without a key) and the key's session folder in the temp
-directory (the course server holds the real copy). The updater never touches `notebooks/data/` or `notebooks/provenance/`.
+Students' own files stay outside the package, in `~/.hs-marimo26/`: `provenance/` (work saved without a key) and `synced/` (the
+local copy of work saved with a key, one folder per key and notebook; the course server holds the other copy). A notebook opened
+without a connection works from the local copy and sends it when the server is back. If there is no local copy either, it starts
+empty and never replaces what the server holds: it asks for a reload, which loads the saved work and keeps the rest in a folder
+beside it (`*.unsynced-<time>`). The updater never removes anything from `notebooks/data/` or `notebooks/provenance/`.
 
 ## Develop
 `pip install -r build/requirements.txt pytest`, then `pytest tests` and `marimo run notebooks`.
