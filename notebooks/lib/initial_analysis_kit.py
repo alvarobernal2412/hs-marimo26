@@ -23,6 +23,8 @@ import temporal_characteristics_util as tcu
 CASE_ID = "case_concept_name"
 ACTIVITY = "concept_name"
 TIMESTAMP = "time_timestamp"
+LIFECYCLE = "lifecycle_transition"
+ACTIVITY_EXTENDED = "activity_extended"  # "<activity>_<lifecycle>": an underscore, not a comma, so that a CSV export keeps its columns
 DHANA = "data/dhana-loan-application.parquet"  # the same log as the .xes next to it, 100 times faster to read
 HISTORY_NAME = "Dhana loan application initial analysis"
 MAP_EXPLORER_HISTORY_NAME = "Dhana loan application map explorer"
@@ -48,8 +50,8 @@ def load_event_log(path) -> pd.DataFrame:
         from xes_reader import read_xes
 
         log = read_xes(str(path), verbatim=True)
-        if "case_lifecycle" in log.columns:  # where the parquet has it: last
-            log = log[[c for c in log.columns if c != "case_lifecycle"] + ["case_lifecycle"]]
+        if ACTIVITY_EXTENDED in log.columns:  # where the parquet has it: last
+            log = log[[c for c in log.columns if c != ACTIVITY_EXTENDED] + [ACTIVITY_EXTENDED]]
         return log
     return pd.read_parquet(path)
 
@@ -476,10 +478,11 @@ def write_notebook_info(folder, notebook: str, source, version: str | None = Non
 
 def normalise_log(log: pd.DataFrame) -> pd.DataFrame:
     """Any event log with the column names of the course notebooks: colons in names become underscores (the marimo explorer breaks
-    on them), and a `case_lifecycle` column ("<case id>, <lifecycle>") is added when the log has a lifecycle and no such column yet."""
+    on them), and an `activity_extended` column ("<activity>_<lifecycle>") is added when the log has a lifecycle and no such column
+    yet."""
     out = log.rename(columns=lambda name: str(name).replace(":", "_"))
-    if "case_lifecycle" not in out.columns and {CASE_ID, "lifecycle_transition"} <= set(out.columns):
-        out["case_lifecycle"] = out[CASE_ID].astype("string") + ", " + out["lifecycle_transition"].astype("string")
+    if ACTIVITY_EXTENDED not in out.columns and {ACTIVITY, LIFECYCLE} <= set(out.columns):
+        out[ACTIVITY_EXTENDED] = out[ACTIVITY].astype("string") + "_" + out[LIFECYCLE].astype("string")
     return out
 
 
