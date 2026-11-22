@@ -305,7 +305,8 @@ def _(ak, get_drawn, kit, event_log, mo, panel, record):
         map_figure, map_meta = record(
             ["map_figure", "map_meta"], kit.draw_map,
             lcm_log, _settings["activities"], _settings["map_type"], _settings["allow_loops"],
-            _settings["show_empty"], _settings["folds"], "application", 620,  # the log's own case column is now the chosen attribute
+            _settings["show_empty"], _settings["folds"], "application", 900,  # the log's own case column is now the chosen attribute
+            room=(100, 140, 110),  # the rings of the loops reach above, below and left of the nodes: with less room they are cut off
         )
         panel.refresh()  # so that the side panel knows the new step before the first annotation is written on it
     except ValueError as _error:
