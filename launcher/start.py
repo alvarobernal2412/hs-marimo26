@@ -36,7 +36,9 @@ def free_port(preferred: int = PREFERRED_PORT) -> int:
 
 
 def build_command(root: Path, port: int, python: str | None = None) -> list[str]:
-    return [python or sys.executable, "-s", "-m", "marimo", "run", str(Path(root) / "notebooks"), "--headless", "--port", str(port)]
+    # "-l error": marimo warns about the title each notebook sets in its header (it reads the title, and ignores the header as
+    # configuration), once per opened notebook; a student would take those lines in the window for a problem
+    return [python or sys.executable, "-s", "-m", "marimo", "-l", "error", "run", str(Path(root) / "notebooks"), "--headless", "--port", str(port)]
 
 
 def remember_port(state: Path, port: int) -> None:
