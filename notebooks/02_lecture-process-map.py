@@ -141,7 +141,8 @@ def _(get_drawn, kit, lcm_log, mo):
     mo.stop(_settings["activities"] == [], mo.callout(mo.md("Select at least one activity."), kind="warn"))
     map_figure, map_meta = kit.draw_map(
         lcm_log, _settings["activities"], _settings["map_type"], _settings["allow_loops"],
-        _settings["show_empty"], _settings["folds"], "application", 620,
+        _settings["show_empty"], _settings["folds"], "application", 900,
+        room=(100, 140, 110),  # the rings of the loops reach above, below and left of the nodes: with less room they are cut off
     )
     return map_figure, map_meta
 

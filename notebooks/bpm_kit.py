@@ -314,13 +314,16 @@ def _service(log: pd.DataFrame, case_notion: str):
     return _services[key]
 
 
-def draw_map(log, activities, map_type, allow_loops, show_empty, folds, case_notion, height=620):
+def draw_map(log, activities, map_type, allow_loops, show_empty, folds, case_notion, height=620, room=(10, 10, 10)):
     """A Linear Continuous Process Mapper map of `log`.
 
     `activities` are activity names as they are in the log (None for all). `folds` maps a fold name to the activities it
     replaces; a fold is drawn when at least one of its activities is selected. Selected activities that do not occur under the
     case notion are left out and listed in the metadata. Returns the Plotly figure and a dict that describes the map, including
     the settings that drew it.
+
+    `room` is the free space above, below and left of the map, in pixels. The map library draws a loop as a ring that reaches
+    beyond the area of the nodes, so a map with large loops needs more room than the default or its rings are cut off.
     """
     service, available, cases = _service(log, case_notion)
     selected = sorted(available) if activities is None else list(activities)
@@ -345,7 +348,7 @@ def draw_map(log, activities, map_type, allow_loops, show_empty, folds, case_not
         visualize_empty_cases=show_empty,
         folds=folds_used,
     )
-    figure.update_layout(height=height, margin=dict(l=10, r=10, t=10, b=10))
+    figure.update_layout(height=height, margin=dict(l=room[2], r=10, t=room[0], b=room[1]))
     settings = {
         "activities": None if activities is None else list(activities),
         "map_type": map_type,
