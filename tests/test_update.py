@@ -106,7 +106,8 @@ def test_latest_release_reads_the_public_latest_page_and_never_asks_the_api():
         return "https://github.com/o/r/releases/tag/v1.3.0"
 
     assert update.latest_release("o/r", resolve=where) == {
-        "version": (1, 3, 0), "zip_url": "https://github.com/o/r/releases/download/v1.3.0/notebooks.zip"}
+        "version": (1, 3, 0), "zip_url": "https://github.com/o/r/releases/download/v1.3.0/notebooks.zip",
+        "manifest_url": "https://github.com/o/r/releases/download/v1.3.0/manifest.json"}
     assert asked == ["https://github.com/o/r/releases/latest"]  # a page, not the API: no limit on requests for a classroom
 
     assert update.latest_release("o/r", resolve=lambda url: "https://github.com/o/r/releases/tag/datasets") is None
@@ -119,8 +120,81 @@ def test_latest_release_reads_the_public_latest_page_and_never_asks_the_api():
     assert update.latest_release("o/r", resolve=boom) is None
 
 
-def manifest(files, requirements=None):
-    return json.dumps({"files": files, **({"requirements": requirements} if requirements else {})})
+def manifest(files, requirements=None, build=None):
+    return json.dumps({"files": files, **({"requirements": requirements} if requirements else {}), **({"build": build} if build else {})})
+
+
+def republished(listed: str, notebooks: bytes = b""):
+    """A release of the installed version, and a download that hands out its manifest and its notebooks; `asked` collects the urls."""
+    asked = []
+
+    def download(url, dest):
+        asked.append(url)
+        Path(dest).write_bytes(listed.encode("utf8") if url.endswith("manifest.json") else notebooks)
+
+    return {"version": (1, 0, 0), "zip_url": "http://x/notebooks.zip", "manifest_url": "http://x/manifest.json"}, download, asked
+
+
+def test_the_same_version_published_again_as_another_build_replaces_the_notebooks(tmp_path):
+    root = setup_root(tmp_path, "1.0.0")
+    (root / "manifest.json").write_text(manifest(["lecture.py"], "aaa", build="old1234"))
+    listed = manifest(["01_new.py"], "aaa", build="new5678")
+    found, download, _ = republished(listed, make_zip({"01_new.py": "new", "manifest.json": listed}))
+
+    assert update.apply_release(root, found, download) == "updated"
+
+    assert (root / "notebooks" / "01_new.py").read_text() == "new" and not (root / "notebooks" / "lecture.py").exists()
+    assert (root / "notebooks" / "provenance" / "work.db").read_text() == "WORK"
+    assert update.read_version(root) == (1, 0, 0)
+    assert update.apply_release(root, found, download) == "current"  # it now is that build
+
+
+def test_the_same_version_and_the_same_build_only_fetches_the_small_manifest(tmp_path):
+    root = setup_root(tmp_path, "1.0.0")
+    (root / "manifest.json").write_text(manifest(["lecture.py"], "aaa", build="old1234"))
+    found, download, asked = republished(manifest(["lecture.py"], "aaa", build="old1234"))
+
+    assert update.apply_release(root, found, download) == "current"
+    assert asked == ["http://x/manifest.json"]
+
+
+def test_the_same_version_published_again_with_other_libraries_asks_for_the_package(tmp_path):
+    root = setup_root(tmp_path, "1.0.0")
+    (root / "manifest.json").write_text(manifest(["lecture.py"], "aaa", build="old1234"))
+    listed = manifest(["lecture.py"], "bbb", build="new5678")
+    found, download, _ = republished(listed, make_zip({"lecture.py": "new", "manifest.json": listed}))
+
+    assert update.apply_release(root, found, download) == "needs-package"
+    assert (root / "notebooks" / "lecture.py").read_text() == "old"
+
+
+def test_the_same_version_is_current_whenever_a_build_is_not_known(tmp_path):
+    root = setup_root(tmp_path, "1.0.0")
+    newer = manifest(["lecture.py"], "aaa", build="new5678")
+    found, download, asked = republished(newer, make_zip({"lecture.py": "new"}))
+
+    assert update.apply_release(root, found, download) == "current"  # this package does not say which build it is
+    (root / "manifest.json").write_text(manifest(["lecture.py"], "aaa"))
+    assert update.apply_release(root, found, download) == "current" and asked == []
+
+    (root / "manifest.json").write_text(manifest(["lecture.py"], "aaa", build="old1234"))
+    assert update.apply_release(root, *republished(manifest(["lecture.py"], "aaa"))[:2]) == "current"  # nor does the release
+    assert update.apply_release(root, *republished("not a manifest")[:2]) == "current"
+    assert update.apply_release(root, release((1, 0, 0)), downloader(b"")) == "current"  # a release without its manifest
+
+    def offline(url, dest):
+        raise OSError("offline")
+
+    assert update.apply_release(root, found, offline) == "current"
+    assert (root / "notebooks" / "lecture.py").read_text() == "old"
+
+
+def test_an_older_release_is_current_whatever_its_build(tmp_path):
+    root = setup_root(tmp_path, "1.2.0")
+    (root / "manifest.json").write_text(manifest(["lecture.py"], "aaa", build="old1234"))
+    found, download, asked = republished(manifest(["lecture.py"], "aaa", build="new5678"))
+
+    assert update.apply_release(root, found, download) == "current" and asked == []
 
 
 def test_a_notebook_the_new_release_no_longer_has_is_removed_and_the_students_own_files_stay(tmp_path):

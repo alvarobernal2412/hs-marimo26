@@ -121,14 +121,14 @@ def assemble(repo: Path, python_dir: Path, data_dir: Path, out_dir: Path, os_nam
 
     `package-id.txt` says which build this is: the version, plus `-<build_id>` when there is one. A computer that already unpacked a
     package with that id does not unpack it again, so a version published again (the same number, new contents) needs a new id to
-    reach it. The runtime's own `version.json` keeps the plain version, which is what the updater compares."""
+    reach it. The runtime's own `version.json` keeps the plain version; its `manifest.json` names the build, and the updater compares both."""
     out_dir.mkdir(parents=True, exist_ok=True)
     zip_path = out_dir / f"hs-marimo26-v{version}-{os_name}.zip"
     with tempfile.TemporaryDirectory() as tmp:
         runtime = Path(tmp) / RUNTIME_ARCHIVE[os_name]
         # what the updater compares a later release with: the notebook files of this one, and the libraries it installs
         listed = Path(tmp) / "manifest.json"
-        listed.write_text(json.dumps(make_notebooks_zip.manifest(repo / "notebooks", repo / "build" / "requirements.txt")), encoding="utf8")
+        listed.write_text(json.dumps(make_notebooks_zip.manifest(repo / "notebooks", repo / "build" / "requirements.txt", build_id)), encoding="utf8")
         entries = collect_runtime(repo, python_dir, data_dir) + [(listed, "manifest.json", 0o644)]
         write_runtime_archive(entries, version, runtime)
         package_id = Path(tmp) / "package-id.txt"

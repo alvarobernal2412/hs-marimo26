@@ -38,6 +38,20 @@ def test_zip_says_which_files_it_ships_and_which_libraries_they_were_made_for(tm
     assert found == {"files": ["lecture.py", "lib/a.py"], "requirements": mz.requirements_hash(requirements)}
 
 
+def test_zip_names_its_build_and_leaves_the_same_manifest_next_to_it_for_the_release(tmp_path):
+    import json
+
+    nb = tmp_path / "notebooks"
+    nb.mkdir()
+    (nb / "lecture.py").write_text("x")
+    (tmp_path / "out").mkdir()
+    out = tmp_path / "out" / "notebooks.zip"
+    mz.make_zip(nb, out, build_id="abc1234")
+    found = json.loads(zipfile.ZipFile(out).read("manifest.json"))
+    assert found == {"files": ["lecture.py"], "build": "abc1234"}
+    assert json.loads((tmp_path / "out" / "manifest.json").read_text(encoding="utf8")) == found  # what a launcher asks first
+
+
 def test_the_libraries_hash_changes_with_a_library_and_not_with_comments_or_order(tmp_path):
     a, b, c = tmp_path / "a.txt", tmp_path / "b.txt", tmp_path / "c.txt"
     a.write_text("marimo==0.25.2\npandas>=3.1.0\n")

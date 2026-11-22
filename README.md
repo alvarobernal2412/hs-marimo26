@@ -64,6 +64,11 @@ build a MINOR or PATCH whose libraries differ from the published release (`build
 before any student is affected. The launcher finds the latest release from the public release page, not the GitHub API, so a
 classroom behind one address is never rate limited.
 
+The manifest also names the build (the commit), and a release publishes it as a file of its own (`manifest.json`). A launcher whose
+version equals the latest release asks for that small file: if the build differs, the version was published again with other
+contents, and it is applied like a MINOR (new notebooks, or the "new version" page when the libraries changed). A changed launcher
+still only arrives with the install line, so that needs a new MAJOR.
+
 To release: `git tag v1.1.0 && git push origin v1.1.0` (or run the *release* workflow by hand with a version). CI builds everything and
 leaves a **draft**. Download the zips from the draft and try them, then press **Publish release**: only then do students and launchers
 see it. A launcher applies the latest release when it has the same MAJOR as the copy it started from.

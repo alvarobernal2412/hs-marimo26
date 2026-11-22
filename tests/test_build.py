@@ -490,6 +490,11 @@ def test_the_package_id_names_the_build_when_there_is_one(tmp_path):
     assert json.loads(inner_zip(build_package(tmp_path / "again", build_id="abc1234")).read("version.json")) == {"version": "1.2.3"}
 
 
+def test_the_runtime_names_its_build_so_the_updater_notices_a_version_published_again(tmp_path):
+    assert json.loads(inner_zip(build_package(tmp_path, build_id="abc1234")).read("manifest.json"))["build"] == "abc1234"
+    assert "build" not in json.loads(inner_zip(build_package(tmp_path / "by-hand")).read("manifest.json"))
+
+
 def test_start_here_explains_how_to_remove_everything():
     text = (ROOT / "launcher" / "START-HERE.txt").read_text(encoding="utf8")
     for expected in ("REMOVING EVERYTHING", "Uninstall", "YES", "course server"):

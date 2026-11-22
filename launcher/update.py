@@ -9,6 +9,10 @@ so it is applied; a newer MAJOR changes the package itself (Python, libraries, d
 `manifest.json` (in the bundle, and in each release's `notebooks.zip`) lists the notebook files a release ships and a hash of the
 libraries they were made for. It is what lets an update remove a notebook that a release dropped, and refuse notebooks that need
 libraries this bundle does not have (a release that changed them without a new MAJOR).
+
+A release can be published again under the same number with other contents. The manifest therefore also names the build (`build`, the
+commit it was made from), and each release publishes its manifest as a small file of its own. When the numbers are equal and the
+builds differ, the release is applied like a newer one of the same MAJOR.
 """
 from __future__ import annotations
 
@@ -84,7 +88,8 @@ def latest_release(repo: str = REPO, resolve=redirect_target) -> dict | None:
         version = parse_version(tag)
         if version is None:
             return None
-        return {"version": version, "zip_url": f"https://github.com/{repo}/releases/download/{tag}/notebooks.zip"}
+        files = f"https://github.com/{repo}/releases/download/{tag}"
+        return {"version": version, "zip_url": f"{files}/notebooks.zip", "manifest_url": f"{files}/{MANIFEST}"}
     except Exception:
         return None
 
@@ -115,20 +120,37 @@ def _remove_dropped(notebooks: Path, before: dict, after: dict) -> None:
             folder = folder.parent
 
 
+def published_again(before: dict, release: dict, download=download_to) -> bool:
+    """Whether the release is another build than the installed one of the same version. Only when both say which build they are: a
+    package built by hand, a release without its manifest and a manifest that cannot be fetched all count as the same build."""
+    try:
+        if not before.get("build") or not release.get("manifest_url"):
+            return False
+        with tempfile.TemporaryDirectory() as tmp:
+            fetched = Path(tmp) / MANIFEST
+            download(release["manifest_url"], fetched)
+            build = read_manifest(fetched.read_text(encoding="utf8")).get("build")
+        return bool(build) and build != before["build"]
+    except Exception:
+        return False
+
+
 def apply_release(root: Path, release: dict, download=download_to) -> str:
     """One of "updated", "current", "needs-package", "failed". The notebooks folder changes only after the whole zip checked out."""
     root = Path(root)
     installed, wanted = read_version(root), release["version"]
-    if wanted <= installed:
+    if wanted < installed:
+        return "current"
+    try:
+        before = read_manifest((root / MANIFEST).read_text(encoding="utf8"))
+    except OSError:
+        before = {}
+    if wanted == installed and not published_again(before, release, download):
         return "current"
     if wanted[0] != installed[0]:
         print("A new version of the course package is available. Please paste the install line from START-HERE.txt again to download it.")
         return "needs-package"
     try:
-        try:
-            before = read_manifest((root / MANIFEST).read_text(encoding="utf8"))
-        except OSError:
-            before = {}
         with tempfile.TemporaryDirectory() as tmp:
             archive = Path(tmp) / "notebooks.zip"
             download(release["zip_url"], archive)

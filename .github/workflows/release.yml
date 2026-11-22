@@ -74,7 +74,7 @@ jobs:
           merge-multiple: true
           path: out
       - name: Zip the notebooks (what running launchers fetch)
-        run: python build/make_notebooks_zip.py --out out/notebooks.zip
+        run: python build/make_notebooks_zip.py --out out/notebooks.zip --build-id "${GITHUB_SHA::7}"
       - name: Put the terminal installers next to the zips
         run: cp launcher/install.sh launcher/install.ps1 out/
       - name: Draft the release
