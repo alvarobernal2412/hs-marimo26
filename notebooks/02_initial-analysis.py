@@ -225,13 +225,16 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(ak, mo, project_file, record):
+def _(ak, du, mo, project_file, record, show_table, state_of):
     # Load the event log; the step records the name of the file, not a folder of somebody's computer
     def load_event_log(name):
         return ak.load_event_log(project_file(name))
 
     event_log_from_disk = record(["event_log_from_disk"], load_event_log, ak.DHANA)
-    mo.md(f"**{len(event_log_from_disk):,}** events loaded.")
+    mo.vstack([
+        mo.md(f"**{len(event_log_from_disk):,}** events loaded. This is the event log as it was read from disk:"),
+        show_table(du.table(event_log_from_disk), artifact_id=state_of("event_log_from_disk"), artifact_name="loaded_event_log"),
+    ])
     return (event_log_from_disk,)
 
 
