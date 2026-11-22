@@ -81,7 +81,12 @@ PAGE_HTML = """<!doctype html>
   </div>
   <p class="note">One click. You won't see this again, and nothing changes if you say no.</p>
 </div>
-<div id="thanks" hidden><h1>Thanks!</h1><p>You can close this tab. Your notebooks are opening in a new tab.</p></div>
+<div id="thanks" hidden>
+  <h1>Thanks!</h1>
+  <p>Your notebooks are opening in a new tab. <b>This can take a minute or two</b>, longer on a slower laptop: please wait, there
+     is no need to start again.</p>
+  <p>You can close this tab.</p>
+</div>
 </main>
 <script>
   let answered = false;

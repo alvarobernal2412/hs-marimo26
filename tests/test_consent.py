@@ -97,6 +97,16 @@ def test_page_is_served_on_loopback_only(tmp_path):
     asked.finish()
 
 
+def test_page_says_after_an_answer_that_the_notebooks_can_take_a_while_to_open(tmp_path):
+    asked = Asked(tmp_path)
+    html = asked.get()
+    thanks = html[html.index('<div id="thanks" hidden>'):html.index("</main>")]  # hidden until either button is answered
+    assert "Your notebooks are opening in a new tab" in thanks
+    assert "This can take a minute or two" in thanks and "slower laptop" in thanks and "please wait" in thanks
+    asked.answer("accepted")
+    asked.finish()
+
+
 def test_page_shows_both_buttons_with_exact_labels(tmp_path):
     asked = Asked(tmp_path)
     html = asked.get()
