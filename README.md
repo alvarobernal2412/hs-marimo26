@@ -2,9 +2,10 @@
 
 The course notebooks as a package students run on their own laptop: no Docker, no install, no terminal.
 
-- `notebooks/`: `00_lecture.py`, `01_map-explorer.py` (maps of the Sepsis log; nothing recorded or saved, no key),
-  `02_initial-analysis.py`, `03_map-explorer.py` and what they share (`bpm_kit.py`, `lib/`, `data/`). `marimo run`
-  serves them as a gallery of apps. The Dhana log is read from `data/dhana-loan-application-molab.xes`.
+- `notebooks/`: `00_lecture-initial-analysis.py`, `01_assignment-initial-analysis.py`, `02_lecture-process-map.py` (maps of the
+  Sepsis log) and `03_assignment-process-map.py`, and what they share (`bpm_kit.py`, `lib/`, `data/`). The two lecture notebooks
+  record and save nothing and ask for no key. `marimo run` serves them as a gallery of apps, under the title each one sets
+  (`app_title`). The Dhana log is read from `data/dhana-loan-application-molab.xes`.
 - `launcher/`: `Start.bat` / `Start.command` (at the package root: unpack the runtime on the first start, then run `start.py`),
   `Change-my-answer.bat` / `.command` (the same with `--consent`), `start.py` (update, ask for consent, start marimo, open the browser),
   `update.py`, `consent.py` (the one-time consent page; the answer is kept in `~/.hs-marimo26/consent.json`; unless it is "accepted"

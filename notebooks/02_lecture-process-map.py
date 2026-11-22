@@ -7,12 +7,15 @@
 #     "linear-continuous-process-mapper>=0.1.0",
 #     "plotly>=7.1.0",
 # ]
+#
+# [tool.marimo.opengraph]
+# title = "02 Lecture - Process Map"
 # ///
 
 import marimo
 
 __generated_with = "0.25.2"
-app = marimo.App(width="full")
+app = marimo.App(width="full", app_title="02 Lecture - Process Map")
 
 
 @app.cell(hide_code=True)

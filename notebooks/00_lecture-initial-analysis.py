@@ -7,12 +7,15 @@
 #     "vegafusion>=2.0",
 #     "pytz",
 # ]
+#
+# [tool.marimo.opengraph]
+# title = "00 Lecture - Initial Analysis"
 # ///
 
 import marimo
 
 __generated_with = "0.25.2"
-app = marimo.App(width="full")
+app = marimo.App(width="full", app_title="00 Lecture - Initial Analysis")
 
 
 @app.cell(hide_code=True)

@@ -90,7 +90,7 @@ def test_the_notebooks_and_the_launcher_agree_on_the_consent_text_they_mean():
 def test_every_notebook_that_saves_to_the_course_server_asks_the_students_answer_first():
     # a notebook that read the address straight from the environment would send a "no" student's work when started by hand
     saving = [file for file in sorted((ROOT / "notebooks").glob("*.py")) if "PMPROV_SYNC_URL" in file.read_text(encoding="utf8")]
-    assert [file.name for file in saving] == ["02_initial-analysis.py", "03_map-explorer.py"]
+    assert [file.name for file in saving] == ["01_assignment-initial-analysis.py", "03_assignment-process-map.py"]
     for file in saving:
         source = file.read_text(encoding="utf8")
         assigned = re.findall(r"^\s*SYNC_URL\s*=\s*(.+)$", source, flags=re.M)

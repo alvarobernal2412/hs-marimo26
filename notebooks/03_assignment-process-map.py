@@ -14,12 +14,15 @@
 #     "kaleido>=1.0.0",
 #     "networkx>=3.7",
 # ]
+#
+# [tool.marimo.opengraph]
+# title = "03 Assignment - Process Map"
 # ///
 
 import marimo
 
 __generated_with = "0.25.2"
-app = marimo.App(width="full")
+app = marimo.App(width="full", app_title="03 Assignment - Process Map")
 
 
 @app.cell(hide_code=True)
