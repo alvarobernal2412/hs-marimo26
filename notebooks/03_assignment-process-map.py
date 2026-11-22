@@ -226,13 +226,20 @@ def _(adapter, ak, rt):
 
 
 @app.cell(hide_code=True)
-def _(ak, mo, project_file, record):
+def _(ak, du, mo, project_file, record, show_table, state_of):
     # Load the event log; the step records the name of the file, not a folder of somebody's computer
     def load_event_log(name):
         return ak.load_event_log(project_file(name))
 
     event_log = record(["event_log"], load_event_log, ak.DHANA)
-    mo.md(f"**{len(event_log):,}** events loaded.")
+    # This notebook does not share data with the initial analysis: it reads the log again. The table is here (folded, the map is what
+    # this notebook is about) so that the log can be looked at without opening the other notebook.
+    mo.vstack([
+        mo.md(f"**{len(event_log):,}** events loaded."),
+        mo.accordion({
+            "Event log": show_table(du.table(event_log, page_size=5), artifact_id=state_of("event_log"), artifact_name="event_log"),
+        }),
+    ])
     return (event_log,)
 
 
