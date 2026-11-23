@@ -53,8 +53,8 @@ def test_outer_zip_has_only_the_expected_entries(tmp_path):
     assert zip_path.name == "hs-marimo26-v1.2.3-windows-x64.zip"
     with zipfile.ZipFile(zip_path) as z:
         assert set(z.namelist()) == {
-            "Start.bat", "Change-my-answer.bat", "Uninstall.bat", "START-HERE.txt", "package-id.txt", "runtime.zip",
-            "launcher/start.py", "launcher/update.py", "launcher/consent.py", "launcher/coursefiles.py", "launcher/notice.py",
+            "Start.bat", "Change-my-answer.bat", "Remove-my-data.bat", "Uninstall.bat", "START-HERE.txt", "package-id.txt", "runtime.zip",
+            "launcher/start.py", "launcher/update.py", "launcher/consent.py", "launcher/removal.py", "launcher/coursefiles.py", "launcher/notice.py",
         }
 
 
@@ -97,7 +97,7 @@ def test_mac_runtime_is_a_tar_that_keeps_exec_bits(tmp_path):
     with zipfile.ZipFile(build_package(tmp_path, os_name="macos-arm64")) as z:
         names = set(z.namelist())
         archive = z.read("runtime.tar.gz")
-    assert {"Start.command", "Change-my-answer.command", "runtime.tar.gz"} <= names
+    assert {"Start.command", "Change-my-answer.command", "Remove-my-data.command", "runtime.tar.gz"} <= names
     assert not any(name.endswith(".bat") for name in names)
     with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as t:
         assert t.getmember("python/bin/python3").mode & 0o777 == 0o755
@@ -489,3 +489,13 @@ def test_start_here_explains_how_to_remove_everything():
     text = (ROOT / "launcher" / "START-HERE.txt").read_text(encoding="utf8")
     for expected in ("REMOVING EVERYTHING", "Uninstall", "YES", "course server"):
         assert expected in text, expected
+
+
+def test_the_package_ships_remove_my_data():
+    bat = (ROOT / "launcher" / "Remove-my-data.bat").read_text(encoding="utf8")
+    command = (ROOT / "launcher" / "Remove-my-data.command").read_text(encoding="utf8")
+    assert 'Start.bat" --remove-data' in bat
+    assert 'Start.command" --remove-data' in command
+    assert command.startswith("#!/bin/bash")
+    assert "Remove-my-data.bat" in br.ROOT_SCRIPTS["windows-x64"]
+    assert "Remove-my-data.command" in br.ROOT_SCRIPTS["macos-arm64"]

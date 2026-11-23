@@ -26,11 +26,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import make_notebooks_zip  # noqa: E402
 
 TARGETS = {"windows-x64": "x86_64-pc-windows-msvc", "macos-arm64": "aarch64-apple-darwin", "macos-x64": "x86_64-apple-darwin"}
-# the files a student double-clicks, at the root of the zip: start the notebooks, change the consent answer, remove everything
+# the files a student double-clicks, at the root of the zip: start the notebooks, change the consent answer, remove saved work, remove everything
 ROOT_SCRIPTS = {
-    "windows-x64": ("Start.bat", "Change-my-answer.bat", "Uninstall.bat"),
-    "macos-arm64": ("Start.command", "Change-my-answer.command", "Uninstall.command"),
-    "macos-x64": ("Start.command", "Change-my-answer.command", "Uninstall.command"),
+    "windows-x64": ("Start.bat", "Change-my-answer.bat", "Remove-my-data.bat", "Uninstall.bat"),
+    "macos-arm64": ("Start.command", "Change-my-answer.command", "Remove-my-data.command", "Uninstall.command"),
+    "macos-x64": ("Start.command", "Change-my-answer.command", "Remove-my-data.command", "Uninstall.command"),
 }
 # the one big archive inside the zip, unpacked once by the system's own tar on the first start (a few files are quick to unzip;
 # the tens of thousands inside are not, with Explorer's unzip)
@@ -134,7 +134,7 @@ def assemble(repo: Path, python_dir: Path, out_dir: Path, os_name: str, version:
         package_id.write_text((f"{version}-{build_id}" if build_id else version) + "\n", encoding="utf8")
         launcher = repo / "launcher"
         loose: list[Entry] = [(launcher / script, script, 0o755) for script in ROOT_SCRIPTS[os_name]]
-        loose += [(launcher / name, f"launcher/{name}", 0o644) for name in ("start.py", "update.py", "consent.py", "coursefiles.py", "notice.py")]
+        loose += [(launcher / name, f"launcher/{name}", 0o644) for name in ("start.py", "update.py", "consent.py", "removal.py", "coursefiles.py", "notice.py")]
         loose.append((launcher / "START-HERE.txt", "START-HERE.txt", 0o644))
         loose.append((package_id, "package-id.txt", 0o644))
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:

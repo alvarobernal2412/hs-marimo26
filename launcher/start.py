@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import consent  # noqa: E402
 import coursefiles  # noqa: E402
 import notice  # noqa: E402
+import removal  # noqa: E402
 import update  # noqa: E402
 
 PREFERRED_PORT = 2718
@@ -151,9 +152,18 @@ def window_name(platform: str = sys.platform) -> str:
     return "black window" if platform == "win32" else "Terminal window"
 
 
+def sync_server(environ=os.environ) -> str:
+    """The course server the notebooks talk to: `PMPROV_SYNC_URL` when set (and not empty), else the course's own."""
+    return environ.get("PMPROV_SYNC_URL") or coursefiles.SERVER
+
+
 def main(root: Path) -> int:
     root, state = Path(root), state_dir()
     already = running_port(state)
+    if already and "--remove-data" in sys.argv[2:]:
+        # the running notebooks hold their work open: removing it has to happen before they start
+        print(f"Close the {window_name()} first, then double-click Remove-my-data again.")
+        return 1
     if already and "--consent" in sys.argv[2:]:
         # the running notebooks keep the answer they started with: it can only change on a fresh start
         print(f"Close the {window_name()} first, then double-click Change-my-answer again.")
@@ -164,6 +174,11 @@ def main(root: Path) -> int:
         return 0
     tell_about_new_package(update.check(root))
     choice = resolve_consent(state, force="--consent" in sys.argv[2:])
+    if "--remove-data" in sys.argv[2:]:
+        try:
+            removal.ask(state, server=sync_server())
+        except Exception as error:  # the notebooks still start; the student can try again
+            print(f"The removal page could not be shown ({error}).")
     fetch_course_files(root, state)
     port = free_port()
     remember_port(state, port)

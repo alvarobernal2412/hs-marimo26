@@ -166,3 +166,19 @@ def test_the_server_dies_with_the_launcher_so_nothing_stays_running_in_the_backg
 def test_tying_the_server_to_the_launcher_does_nothing_off_windows(monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
     assert start.tie_to_this_process(object()) is None
+
+
+def test_start_refuses_remove_data_while_running(tmp_path, monkeypatch, capsys):
+    import removal
+
+    monkeypatch.setattr(sys, "argv", ["start.py", str(tmp_path), "--remove-data"])
+    monkeypatch.setattr(start, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(start, "running_port", lambda state: 2718)
+    monkeypatch.setattr(start.webbrowser, "open", lambda url: (_ for _ in ()).throw(AssertionError("no browser must open")))
+
+    def must_not_ask(*args, **kwargs):
+        raise AssertionError("the removal page must not be shown")
+
+    monkeypatch.setattr(removal, "ask", must_not_ask)
+    assert start.main(tmp_path) == 1
+    assert f"Close the {start.window_name()} first, then double-click Remove-my-data again." in capsys.readouterr().out
