@@ -1,4 +1,6 @@
+# not public: the launcher fetches the parquet from the course server (launcher/coursefiles.py); only its hash is here
 notebooks/data/dhana-loan-application*.xes
+notebooks/data/dhana-loan-application.parquet
 __pycache__/
 *.pyc
 notebooks/__marimo__/

@@ -34,17 +34,12 @@ jobs:
         env:
           RAW: ${{ inputs.version || github.ref_name }}
         run: python build/check_release.py --version "${RAW#v}"
-      - name: Download the big datasets (release "datasets")
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release download datasets --dir data-dl --pattern "*.xes"
       - name: Build the zip
         shell: bash
         env:
           RAW: ${{ inputs.version || github.ref_name }}
           GITHUB_TOKEN: ${{ github.token }}  # the runner's shared address is rate limited for anonymous API calls
-        run: python build/build_runtime.py --os ${{ matrix.os }} --data-dir data-dl --out out --version "${RAW#v}" --build-id "${GITHUB_SHA::7}"
+        run: python build/build_runtime.py --os ${{ matrix.os }} --out out --version "${RAW#v}" --build-id "${GITHUB_SHA::7}"
       - name: Check the Mac terminal installer (install.sh) installs a package that sets up and loads
         if: runner.os == 'macOS'
         shell: bash

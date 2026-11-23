@@ -9,6 +9,13 @@ import zipfile
 from pathlib import Path
 
 SKIP_DIRS = {"__pycache__", "provenance"}
+PRIVATE_MARK = ".sha256"
+
+
+def is_private(file: Path) -> bool:
+    """A file with its hash next to it (`<name>.sha256`) is not public: no release ships it, the launcher fetches it from the
+    course server with the course code (launcher/coursefiles.py). The hash file itself is shipped."""
+    return Path(str(file) + PRIVATE_MARK).is_file()
 
 
 REQUIREMENTS = Path(__file__).resolve().parent / "requirements.txt"
@@ -19,7 +26,7 @@ def shipped_files(notebooks: Path) -> list[tuple[Path, str]]:
     found = []
     for file in sorted(Path(notebooks).rglob("*")):
         relative = file.relative_to(notebooks)
-        if not file.is_file() or SKIP_DIRS & set(relative.parts) or file.suffix in {".xes", ".pyc"}:
+        if not file.is_file() or SKIP_DIRS & set(relative.parts) or file.suffix in {".xes", ".pyc"} or is_private(file):
             continue
         found.append((file, relative.as_posix()))
     return found

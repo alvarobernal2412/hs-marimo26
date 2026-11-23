@@ -16,11 +16,13 @@ def test_zip_excludes_xes_and_caches_but_includes_lib(tmp_path):
     (nb / "lib" / "__pycache__" / "a.pyc").write_text("x")
     (nb / "data" / "big.xes").write_text("x")
     (nb / "data" / "small.csv").write_text("x")
+    (nb / "data" / "private.parquet").write_text("x")  # a developer has it; its hash next to it says it is not public
+    (nb / "data" / "private.parquet.sha256").write_text("abc")
     (nb / "provenance" / "work.db").write_text("x")
     out = tmp_path / "notebooks.zip"
     mz.make_zip(nb, out)
     names = set(zipfile.ZipFile(out).namelist())
-    assert names == {"lecture.py", "lib/a.py", "data/small.csv", "manifest.json"}
+    assert names == {"lecture.py", "lib/a.py", "data/small.csv", "data/private.parquet.sha256", "manifest.json"}
 
 
 def test_zip_says_which_files_it_ships_and_which_libraries_they_were_made_for(tmp_path):

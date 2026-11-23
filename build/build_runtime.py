@@ -1,8 +1,8 @@
 """Builds the student zip of one operating system: Python 3.13 (python.org's signed embeddable build on Windows, python-build-standalone on
-Mac) + pinned packages + launcher + notebooks + datasets.
+Mac) + pinned packages + launcher + notebooks (with their public datasets).
 
 Run it on the operating system it builds for (the packages are installed with that system's own pip):
-    python build/build_runtime.py --os windows-x64 --data-dir DATA --out OUT --version 1.0.0
+    python build/build_runtime.py --os windows-x64 --out OUT --version 1.0.0
 """
 from __future__ import annotations
 
@@ -68,21 +68,20 @@ def find_python_asset(release: dict, target: str) -> str:
 Entry = tuple[Path, str, int]  # (file on disk, name in the archive, unix mode)
 
 
-def collect_runtime(repo: Path, python_dir: Path, data_dir: Path) -> list[Entry]:
-    """What the first start unpacks into the runtime folder: python/, notebooks/ (with its data/), without bytecode caches."""
+def collect_runtime(repo: Path, python_dir: Path) -> list[Entry]:
+    """What the first start unpacks into the runtime folder: python/, notebooks/ (with its data/), without bytecode caches and
+    without the files that are not public (the launcher fetches those, see launcher/coursefiles.py)."""
     entries: list[Entry] = []
 
     def add_tree(source: Path, prefix: str) -> None:
         for file in sorted(source.rglob("*")):
-            if file.is_file() and "__pycache__" not in file.parts and file.suffix != ".pyc":
+            if file.is_file() and "__pycache__" not in file.parts and file.suffix != ".pyc" and not make_notebooks_zip.is_private(file):
                 relative = file.relative_to(source)
                 executable = file.stat().st_mode & 0o111 or (prefix == "python" and relative.parts[0] == "bin")
                 entries.append((file, f"{prefix}/{relative.as_posix()}", 0o755 if executable else 0o644))
 
     add_tree(python_dir, "python")
     add_tree(repo / "notebooks", "notebooks")
-    for file in sorted(Path(data_dir).glob("*")):
-        entries.append((file, f"notebooks/data/{file.name}", 0o644))
     return entries
 
 
@@ -116,7 +115,7 @@ def add_to_zip(z: zipfile.ZipFile, file: Path, name: str, mode: int, compress_ty
         shutil.copyfileobj(src, dst, 1024 * 1024)
 
 
-def assemble(repo: Path, python_dir: Path, data_dir: Path, out_dir: Path, os_name: str, version: str, build_id: str = "") -> Path:
+def assemble(repo: Path, python_dir: Path, out_dir: Path, os_name: str, version: str, build_id: str = "") -> Path:
     """Builds the student zip: a few loose files plus ONE runtime archive; returns the zip's path.
 
     `package-id.txt` says which build this is: the version, plus `-<build_id>` when there is one. A computer that already unpacked a
@@ -129,13 +128,13 @@ def assemble(repo: Path, python_dir: Path, data_dir: Path, out_dir: Path, os_nam
         # what the updater compares a later release with: the notebook files of this one, and the libraries it installs
         listed = Path(tmp) / "manifest.json"
         listed.write_text(json.dumps(make_notebooks_zip.manifest(repo / "notebooks", repo / "build" / "requirements.txt", build_id)), encoding="utf8")
-        entries = collect_runtime(repo, python_dir, data_dir) + [(listed, "manifest.json", 0o644)]
+        entries = collect_runtime(repo, python_dir) + [(listed, "manifest.json", 0o644)]
         write_runtime_archive(entries, version, runtime)
         package_id = Path(tmp) / "package-id.txt"
         package_id.write_text((f"{version}-{build_id}" if build_id else version) + "\n", encoding="utf8")
         launcher = repo / "launcher"
         loose: list[Entry] = [(launcher / script, script, 0o755) for script in ROOT_SCRIPTS[os_name]]
-        loose += [(launcher / name, f"launcher/{name}", 0o644) for name in ("start.py", "update.py", "consent.py", "notice.py")]
+        loose += [(launcher / name, f"launcher/{name}", 0o644) for name in ("start.py", "update.py", "consent.py", "coursefiles.py", "notice.py")]
         loose.append((launcher / "START-HERE.txt", "START-HERE.txt", 0o644))
         loose.append((package_id, "package-id.txt", 0o644))
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
@@ -143,12 +142,6 @@ def assemble(repo: Path, python_dir: Path, data_dir: Path, out_dir: Path, os_nam
                 add_to_zip(z, file, name, mode, zipfile.ZIP_DEFLATED)
             add_to_zip(z, runtime, runtime.name, 0o644, zipfile.ZIP_STORED)  # already compressed
     return zip_path
-
-
-def export_csv(interpreter: Path, parquet: Path, out: Path) -> None:
-    """Writes the Dhana log as a `.csv` next to its `.xes`, for the tools that read neither parquet nor the notebooks' loader."""
-    code = "import sys, pandas as pd; pd.read_parquet(sys.argv[1]).to_csv(sys.argv[2], index=False)"
-    subprocess.run([str(interpreter), "-s", "-c", code, str(parquet), str(out)], check=True)
 
 
 def github_json(url: str, token: str | None = None, attempts: int = 3, sleep=time.sleep, opener=urllib.request.urlopen):
@@ -283,7 +276,6 @@ def smoke_test(interpreter: Path, modules: tuple[str, ...] = SMOKE_MODULES) -> N
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--os", required=True, choices=sorted(TARGETS))
-    parser.add_argument("--data-dir", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--version", required=True, help="MAJOR.MINOR.PATCH, as in the release tag without the v")
     parser.add_argument("--build-id", default="", help="what tells this build from another of the same version, such as a commit's first 7 characters")
@@ -297,13 +289,7 @@ def main() -> int:
         if args.os in MAC_ARCH:
             retarget_for_older_macs(interpreter, next((python_dir / "lib").glob("python3.*/site-packages")), args.os)
         smoke_test(interpreter)
-        # the datasets of the zip: the big .xes from the data release, plus the csv made from the parquet the notebooks use
-        datasets = Path(tmp) / "datasets"
-        datasets.mkdir()
-        for file in Path(args.data_dir).glob("*"):
-            shutil.copy(file, datasets / file.name)
-        export_csv(interpreter, repo / "notebooks" / "data" / "dhana-loan-application.parquet", datasets / "dhana-loan-application.csv")
-        print(assemble(repo, python_dir, datasets, args.out, args.os, args.version, args.build_id))
+        print(assemble(repo, python_dir, args.out, args.os, args.version, args.build_id))
     return 0
 
 

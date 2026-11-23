@@ -38,10 +38,7 @@ def build_package(tmp_path, os_name="windows-x64", version="1.2.3", build_id="")
     (python_dir / "bin" / "python3").chmod(0o755)
     (python_dir / "pkg" / "__pycache__").mkdir(parents=True)
     (python_dir / "pkg" / "__pycache__" / "x.cpython-313.pyc").write_text("")
-    data = tmp_path / "data"
-    data.mkdir()
-    (data / "dhana-loan-application-molab.xes").write_text("X")
-    return br.assemble(ROOT, python_dir, data, tmp_path / "out", os_name=os_name, version=version, build_id=build_id)
+    return br.assemble(ROOT, python_dir, tmp_path / "out", os_name=os_name, version=version, build_id=build_id)
 
 
 def inner_zip(outer_path: Path, name: str = "runtime.zip") -> zipfile.ZipFile:
@@ -57,7 +54,7 @@ def test_outer_zip_has_only_the_expected_entries(tmp_path):
     with zipfile.ZipFile(zip_path) as z:
         assert set(z.namelist()) == {
             "Start.bat", "Change-my-answer.bat", "Uninstall.bat", "START-HERE.txt", "package-id.txt", "runtime.zip",
-            "launcher/start.py", "launcher/update.py", "launcher/consent.py", "launcher/notice.py",
+            "launcher/start.py", "launcher/update.py", "launcher/consent.py", "launcher/coursefiles.py", "launcher/notice.py",
         }
 
 
@@ -79,9 +76,12 @@ def test_package_id_is_the_version(tmp_path):
 
 def test_runtime_zip_holds_python_notebooks_and_version(tmp_path):
     names = set(inner_zip(build_package(tmp_path)).namelist())
-    for expected in ("python/python.exe", "notebooks/00_lecture-initial-analysis.py", "notebooks/data/dhana-loan-application-molab.xes", "version.json"):
+    for expected in ("python/python.exe", "notebooks/00_lecture-initial-analysis.py", "notebooks/data/SepsisCases2020EventLog.xes", "version.json"):
         assert expected in names, expected
     assert not any(name.startswith("launcher/") for name in names)
+    private = [name for name in names if name.endswith(".sha256")]
+    assert private == ["notebooks/data/dhana-loan-application.parquet.sha256"]  # the log that is not public is named ...
+    assert not any(name[: -len(".sha256")] in names for name in private)  # ... and never shipped: the launcher fetches it
     assert not any("__pycache__" in name or name.endswith(".pyc") for name in names)
 
 
@@ -122,16 +122,6 @@ def test_system_tar_unpacks_the_windows_runtime(tmp_path):
     subprocess.run(["tar", "-xf", str(outer / "runtime.zip"), "-C", str(runtime)], check=True)
     assert (runtime / "python" / "python.exe").exists()
     assert (runtime / "version.json").exists()
-
-
-def test_export_csv_writes_the_log_with_its_columns(tmp_path):
-    import pandas as pd
-
-    parquet = tmp_path / "log.parquet"
-    pd.DataFrame({"case_concept_name": ["A1", "A2"], "concept_name": ["x", "y"]}).to_parquet(parquet)
-    out = tmp_path / "log.csv"
-    br.export_csv(Path(sys.executable), parquet, out)
-    assert out.read_text(encoding="utf8").splitlines() == ["case_concept_name,concept_name", "A1,x", "A2,y"]
 
 
 def test_github_json_sends_the_token_and_retries_when_rate_limited():

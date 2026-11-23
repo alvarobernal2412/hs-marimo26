@@ -81,10 +81,14 @@ def test_normalise_log_keeps_an_existing_activity_extended_and_adds_none_without
 
 def test_the_dhana_log_of_the_notebooks_has_the_extended_activity_and_no_comma_joined_column():
     import pandas as pd
+    import pytest
 
     import initial_analysis_kit as ak
 
-    log = pd.read_parquet(Path(__file__).resolve().parents[1] / "notebooks" / ak.DHANA)
+    path = Path(__file__).resolve().parents[1] / "notebooks" / ak.DHANA
+    if not path.is_file():
+        pytest.skip("the log is not public: it is only on a computer that fetched it")
+    log = pd.read_parquet(path)
     assert list(log.columns)[-1] == "activity_extended" and "case_lifecycle" not in log.columns
     assert (log["activity_extended"] == log["concept_name"] + "_" + log["lifecycle_transition"]).all()
     assert not log["activity_extended"].str.contains(",").any()
