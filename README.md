@@ -7,7 +7,7 @@ The course notebooks as a package students run on their own laptop: no Docker, n
   record and save nothing and ask for no key. `marimo run` serves them as a gallery of apps, under the title each one sets
   (`app_title`). The two assignment notebooks read a log that is not public (see "The log that is not public").
 - `launcher/`: `Start.bat` / `Start.command` (at the package root: unpack the runtime on the first start, then run `start.py`),
-  `Change-my-answer.bat` / `.command` (the same with `--consent`), `start.py` (update, ask for consent, fetch the log that is not public, start marimo, open the browser),
+  `Change-my-answer.bat` / `.command` (the same with `--consent`), `Remove-my-data.bat` / `.command` (the same with `--remove-data`), `removal.py` (the page that removes one assignment's saved work from the course server, keeping a copy for the teachers; refuses while the notebooks run), `start.py` (update, ask for consent, fetch the log that is not public, start marimo, open the browser),
   `update.py`, `coursefiles.py` (the one-time course code page and the download), `consent.py` (the one-time consent page; the answer is kept in `~/.hs-marimo26/consent.json`; unless it is "accepted"
   the notebooks run with `PMPROV_SYNC_URL=""`, i.e. without the course server; `--consent` asks again, and refuses while the notebooks run).
 - The student zip (what the installer downloads) is two layers, so unpacking it is quick (Explorer's unzip is slow on tens of thousands of files): a few loose files

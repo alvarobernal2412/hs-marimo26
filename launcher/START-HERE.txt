@@ -90,13 +90,25 @@ To change your answer: double-click "Change-my-answer" (Change-my-answer.bat on 
 on a Mac, next to Start). If the notebooks are running, close their window first. The page then asks again.
 
 
+REMOVING YOUR SAVED DATA (ONLY IF YOUR TEACHERS ASK)
+----------------------------------------------------
+Use this only when your teachers tell you to, for example when something went wrong with your saved work.
+1. Close the window of the notebooks first (the one that opened when you started them).
+2. Double-click "Remove-my-data" (Remove-my-data.bat on Windows, Remove-my-data.command on a Mac, next to Start).
+3. On the page that opens, paste your key into the field "Your key", tick the notebook you want to clear ("01 Assignment - Initial Analysis",
+   "03 Assignment - Process Map", or both), press "Remove", then "Yes, remove it" to confirm.
+- The course server keeps a copy of that work for your teachers.
+- That notebook starts empty and keeps saving your work from then on.
+- The earlier copy on this computer is kept aside, not deleted.
+If the notebooks are still running, the window says so and nothing is removed: close their window first, then double-click Remove-my-data again.
+
 REMOVING EVERYTHING
 -------------------
 To remove the course tools and your saved work from this computer, double-click "Uninstall" (Uninstall.bat on Windows,
 Uninstall.command on a Mac, next to Start). Close the notebooks' window first. It shows what will be deleted and what that
 means for your work, and goes ahead only when you type YES.
 - If you shared your analyses with the course server, that copy stays there: Uninstall does not remove it. Enter the same key
-  after a new setup and your work comes back. Ask your teachers if you want the server copy deleted too.
+  after a new setup and your work comes back. To clear the server copy too, see "Removing your saved data" above (only if your teachers ask).
 - If you did not share them, they exist only on this computer and are lost for good.
 - The course event log is removed too. After a new setup you enter the course code again.
 - The folder  hs-marimo26  with Start in it stays: delete it yourself when you no longer need it.
