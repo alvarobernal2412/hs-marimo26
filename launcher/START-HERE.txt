@@ -73,8 +73,10 @@ and downloads the event log to this computer. You do this once.
 YOUR KEY
 --------
 If you share your analyses (see below), "01 Assignment - Initial Analysis" and "03 Assignment - Process Map" ask for
-your personal key. Paste it once. Your work is saved under it and comes back whenever you use the same key, on any computer.
-The key is not the course code: the course code is the same for everyone, the key is yours alone.
+your anonymous key. Each group has one key: only ONE of you opens the key link your teachers give you, presses Copy,
+and each member uses that key. Opening the link again in the same browser shows the same key. Paste it once in the notebook.
+Your work is saved under it and comes back whenever you use the same key, on any computer.
+The key is not the course code: the course code is the same for everyone, the key belongs to your group.
 
 
 SHARING YOUR ANALYSES (OPTIONAL)
