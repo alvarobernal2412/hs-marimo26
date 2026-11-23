@@ -107,14 +107,17 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(ak, dataset_dropdown, mo, project_file):
+def _(ak, dataset_dropdown, du, mo, project_file):
     # Load the chosen event log in its own format. Colons in column names become underscores (they conflict with the marimo explorer).
     mo.stop(
         dataset_dropdown.value is None,
         mo.callout(mo.md("**Choose an event log to start the analysis.**"), kind="info"),
     )
     event_log_from_disk = ak.normalise_log(ak.read_log(project_file(dataset_dropdown.value)))
-    mo.md(f"**{len(event_log_from_disk):,}** events loaded.")
+    mo.vstack([
+        mo.md(f"**{len(event_log_from_disk):,}** events loaded. This is the event log as it was read from disk:"),
+        du.table(event_log_from_disk),
+    ])
     return (event_log_from_disk,)
 
 
