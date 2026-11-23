@@ -22,8 +22,8 @@ SERVER = "https://provenance.example"
 
 
 class FakeResponse:
-    def __init__(self, status=200):
-        self.status = status
+    def __init__(self, status=200, body=b"{}"):
+        self.status, self.body = status, body
 
     def __enter__(self):
         return self
@@ -32,14 +32,14 @@ class FakeResponse:
         return False
 
     def read(self):
-        return b"{}"
+        return self.body
 
 
 class FakeOpener:
     """Answers every request with one status (or raises); records the requests."""
 
-    def __init__(self, status=200, error=None):
-        self.status, self.error, self.requests = status, error, []
+    def __init__(self, status=200, error=None, body=b"{}"):
+        self.status, self.error, self.body, self.requests = status, error, body, []
 
     def __call__(self, request, timeout=None):
         self.requests.append(request)
@@ -47,7 +47,7 @@ class FakeOpener:
             raise self.error
         if self.status >= 400:
             raise urllib.error.HTTPError(request.full_url, self.status, "x", {}, None)
-        return FakeResponse(self.status)
+        return FakeResponse(self.status, self.body)
 
 
 def make_folders(state: Path, *notebooks: str) -> dict[str, Path]:
@@ -120,7 +120,7 @@ def test_a_local_folder_that_cannot_move_does_not_undo_the_removal(tmp_path, mon
     def locked(src, dst):
         raise PermissionError("in use")
 
-    monkeypatch.setattr(removal.shutil, "move", locked)
+    monkeypatch.setattr(removal.os, "replace", locked)
     assert removal.remove(tmp_path, KEY, ["map-explorer"], server=SERVER, opener=FakeOpener(200)) == {"map-explorer": "removed"}
     assert folders["map-explorer"].is_dir()
 
@@ -190,3 +190,25 @@ def test_removing_through_the_page_returns_the_result(tmp_path, monkeypatch):
     assert asked.finish() == {"map-explorer": "removed"}
     assert not folders["map-explorer"].exists()
     assert opener.requests[0].get_header("Authorization") == f"Bearer {KEY}"
+
+
+def test_a_removal_leaves_a_state_file_at_the_removal_revision(tmp_path):
+    folders = make_folders(tmp_path, "map-explorer")
+    body = json.dumps({"removed": 2, "revision": 3, "removed_at": "2026-11-23T10:00:00+00:00"}).encode()
+    assert removal.remove(tmp_path, KEY, ["map-explorer"], server=SERVER, opener=FakeOpener(200, body=body)) == {"map-explorer": "removed"}
+    assert not folders["map-explorer"].exists()
+    assert json.loads(sidecar(folders["map-explorer"]).read_text()) == {
+        "key_hash": hashlib.sha256(KEY.encode()).hexdigest(), "revision": 3, "sha256": ""}
+
+
+def test_a_removal_answer_without_a_revision_deletes_the_state_file(tmp_path):
+    folders = make_folders(tmp_path, "map-explorer")
+    assert removal.remove(tmp_path, KEY, ["map-explorer"], server=SERVER, opener=FakeOpener(200, body=b"not json")) == {"map-explorer": "removed"}
+    assert not sidecar(folders["map-explorer"]).exists()
+
+
+def test_a_removal_without_a_local_folder_still_leaves_the_state_file(tmp_path):
+    folder = removal.local_folder(tmp_path, KEY, "map-explorer")
+    body = json.dumps({"removed": 1, "revision": 5}).encode()
+    removal.remove(tmp_path, KEY, ["map-explorer"], server=SERVER, opener=FakeOpener(200, body=body))
+    assert json.loads(sidecar(folder).read_text())["revision"] == 5

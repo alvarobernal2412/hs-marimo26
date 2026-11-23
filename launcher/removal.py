@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import shutil
+import os
 import threading
 import time
 import urllib.error
@@ -24,27 +24,42 @@ def local_folder(state: Path, key: str, notebook: str) -> Path:
     return Path(state) / "synced" / hashlib.sha256(f"{key}/{notebook}".encode()).hexdigest()[:16]
 
 
-def _server_removal(server: str, key: str, notebook: str, opener) -> str:
+def _server_removal(server: str, key: str, notebook: str, opener) -> tuple[str, int | None]:
+    """What the server did ("removed", "nothing", ...) and, for "removed", the revision of the removal when it said one."""
     request = urllib.request.Request(
         f"{server.rstrip('/')}/n/{notebook}/v1/provenance", method="DELETE", headers={"Authorization": f"Bearer {key}"})
     try:
         with opener(request, timeout=30) as response:
-            return "removed" if response.status == 200 else "offline"
+            if response.status != 200:
+                return "offline", None
+            try:
+                revision = json.loads(response.read()).get("revision")
+            except (ValueError, AttributeError):
+                revision = None
+            return "removed", revision if isinstance(revision, int) and not isinstance(revision, bool) and revision >= 0 else None
     except urllib.error.HTTPError as error:
-        return {404: "nothing", 401: "unauthorized", 403: "unauthorized", 429: "unauthorized", 423: "closed"}.get(error.code, "offline")
+        return {404: "nothing", 401: "unauthorized", 403: "unauthorized", 429: "unauthorized", 423: "closed"}.get(error.code, "offline"), None
     except Exception:  # network down, timeout, a broken answer: nothing was changed as far as the student can tell
-        return "offline"
+        return "offline", None
 
 
-def _set_aside(state: Path, key: str, notebook: str) -> bool:
-    """Moves this notebook's local folder to `<folder>.removed-<UTC stamp>` and deletes its `.sync.json`. False when that failed."""
+def _set_aside(state: Path, key: str, notebook: str, revision: int | None = None) -> bool:
+    """Moves this notebook's local folder to `<folder>.removed-<UTC stamp>`. Its `.sync.json` is rewritten to say "this key's work
+    is at the removal's revision, nothing saved yet" (what the notebook's `Sync` writes), so the next save builds on the removal;
+    without that revision it is deleted. False when the move failed."""
     folder = local_folder(state, key, notebook)
     sidecar = folder.with_name(folder.name + ".sync.json")
     try:
         if folder.exists():
             stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-            shutil.move(str(folder), str(folder.with_name(f"{folder.name}.removed-{stamp}")))
-        sidecar.unlink(missing_ok=True)
+            # a rename in the same directory: complete or an error, where shutil.move falls back to copying and deleting
+            os.replace(folder, folder.with_name(f"{folder.name}.removed-{stamp}"))
+        if revision is None:
+            sidecar.unlink(missing_ok=True)
+        else:
+            sidecar.parent.mkdir(parents=True, exist_ok=True)
+            record = {"key_hash": hashlib.sha256(key.encode()).hexdigest(), "revision": revision, "sha256": ""}
+            sidecar.write_text(json.dumps(record), encoding="utf-8")
         return True
     except OSError:  # e.g. the notebooks are open: the notebook sets the copy aside itself when it next opens
         return False
@@ -54,8 +69,8 @@ def _remove(state: Path, key: str, notebooks: list[str], server: str, opener) ->
     results: dict[str, str] = {}
     kept_here: list[str] = []
     for notebook in notebooks:
-        results[notebook] = _server_removal(server, key, notebook, opener)
-        if results[notebook] in ("removed", "nothing") and not _set_aside(state, key, notebook):
+        results[notebook], revision = _server_removal(server, key, notebook, opener)
+        if results[notebook] in ("removed", "nothing") and not _set_aside(state, key, notebook, revision):
             kept_here.append(notebook)
     return results, kept_here
 
