@@ -228,7 +228,9 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(ak, du, mo, project_file, record, show_table, state_of):
+def _(HERE, ak, du, mo, project_file, record, show_table, state_of):
+    # The log is not public and not part of the package: the launcher downloads it with the course code. Without it, say so.
+    mo.stop(ak.log_is_missing(HERE), mo.callout(mo.md(ak.MISSING_LOG), kind="warn"))
     # Load the event log; the step records the name of the file, not a folder of somebody's computer
     def load_event_log(name):
         return ak.load_event_log(project_file(name))

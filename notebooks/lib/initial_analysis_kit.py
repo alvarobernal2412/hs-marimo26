@@ -25,7 +25,11 @@ ACTIVITY = "concept_name"
 TIMESTAMP = "time_timestamp"
 LIFECYCLE = "lifecycle_transition"
 ACTIVITY_EXTENDED = "activity_extended"  # "<activity>_<lifecycle>": an underscore, not a comma, so that a CSV export keeps its columns
-DHANA = "data/dhana-loan-application.parquet"  # the same log as the .xes next to it, 100 times faster to read
+DHANA = "data/dhana-loan-application.parquet"  # not public and not in the package: the launcher fetches it (launcher/coursefiles.py)
+MISSING_LOG = (
+    "**The course event log is not on this computer yet.** Close the window that opened when you started, double-click "
+    "**Start** again and enter the course code your teachers gave you. If you have no code, ask your teachers."
+)
 HISTORY_NAME = "Dhana loan application initial analysis"
 MAP_EXPLORER_HISTORY_NAME = "Dhana loan application map explorer"
 
@@ -41,6 +45,11 @@ _PROTECTED = (CASE_ID, ACTIVITY, TIMESTAMP)
 
 def _is_timestamp(series: pd.Series) -> bool:
     return isinstance(series.dtype, pd.DatetimeTZDtype) or pd.api.types.is_datetime64_dtype(series)
+
+
+def log_is_missing(folder) -> bool:
+    """Whether the course log is absent from the notebooks' folder (the student started without entering the course code)."""
+    return not (Path(folder) / DHANA).is_file()
 
 
 def load_event_log(path) -> pd.DataFrame:
