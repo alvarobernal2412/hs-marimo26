@@ -95,6 +95,17 @@ def test_resolve_consent_never_blocks_the_start_when_the_page_fails(tmp_path):
     assert start.resolve_consent(tmp_path, force=False, ask=broken) == "undecided"
 
 
+def test_the_start_fetches_the_course_files_and_never_stops_when_that_fails(tmp_path):
+    asked = []
+    assert start.fetch_course_files(tmp_path, tmp_path / "state", ensure=lambda root, state: asked.append((root, state)) or "downloaded") == "downloaded"
+    assert asked == [(tmp_path, tmp_path / "state")]
+
+    def broken(root, state):
+        raise OSError("cannot open a port")
+
+    assert start.fetch_course_files(tmp_path, tmp_path / "state", ensure=broken) == "skipped"
+
+
 @pytest.mark.parametrize("choice", ["accepted", "declined", "undecided"])
 @pytest.mark.parametrize("preset", [None, "https://example.org/sync"])
 def test_marimo_env_blanks_sync_url_unless_accepted(tmp_path, choice, preset):

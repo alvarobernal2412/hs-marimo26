@@ -11,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import consent  # noqa: E402
+import coursefiles  # noqa: E402
 import notice  # noqa: E402
 import update  # noqa: E402
 
@@ -65,6 +66,15 @@ def resolve_consent(state: Path, force: bool, ask=consent.ask) -> str:
         return ask(state)
     except Exception:  # like the updater: whatever goes wrong, the student can still start (local-only, asked again next time)
         return "undecided"
+
+
+def fetch_course_files(root: Path, state: Path, ensure=coursefiles.ensure) -> str:
+    """The event log that is not public: downloaded with the course code when this computer does not have it (see coursefiles.py).
+    Whatever goes wrong, the student still starts; the notebooks that need the log say what to do."""
+    try:
+        return ensure(root, state)
+    except Exception:
+        return "skipped"
 
 
 def tell_about_new_package(result: str, show=notice.show) -> None:
@@ -154,6 +164,7 @@ def main(root: Path) -> int:
         return 0
     tell_about_new_package(update.check(root))
     choice = resolve_consent(state, force="--consent" in sys.argv[2:])
+    fetch_course_files(root, state)
     port = free_port()
     remember_port(state, port)
     env = marimo_env(os.environ, state, choice)
