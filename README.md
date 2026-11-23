@@ -5,10 +5,10 @@ The course notebooks as a package students run on their own laptop: no Docker, n
 - `notebooks/`: `00_lecture-initial-analysis.py`, `01_assignment-initial-analysis.py`, `02_lecture-process-map.py` (maps of the
   Sepsis log) and `03_assignment-process-map.py`, and what they share (`bpm_kit.py`, `lib/`, `data/`). The two lecture notebooks
   record and save nothing and ask for no key. `marimo run` serves them as a gallery of apps, under the title each one sets
-  (`app_title`). The Dhana log is read from `data/dhana-loan-application-molab.xes`.
+  (`app_title`). The two assignment notebooks read a log that is not public (see "The log that is not public").
 - `launcher/`: `Start.bat` / `Start.command` (at the package root: unpack the runtime on the first start, then run `start.py`),
-  `Change-my-answer.bat` / `.command` (the same with `--consent`), `start.py` (update, ask for consent, start marimo, open the browser),
-  `update.py`, `consent.py` (the one-time consent page; the answer is kept in `~/.hs-marimo26/consent.json`; unless it is "accepted"
+  `Change-my-answer.bat` / `.command` (the same with `--consent`), `start.py` (update, ask for consent, fetch the log that is not public, start marimo, open the browser),
+  `update.py`, `coursefiles.py` (the one-time course code page and the download), `consent.py` (the one-time consent page; the answer is kept in `~/.hs-marimo26/consent.json`; unless it is "accepted"
   the notebooks run with `PMPROV_SYNC_URL=""`, i.e. without the course server; `--consent` asks again, and refuses while the notebooks run).
 - The student zip (what the installer downloads) is two layers, so unpacking it is quick (Explorer's unzip is slow on tens of thousands of files): a few loose files
   (`Start.*`, `Change-my-answer.*`, `launcher/`, `START-HERE.txt` (the students' step-by-step, plain text so a double-click opens it),
@@ -29,7 +29,7 @@ The course notebooks as a package students run on their own laptop: no Docker, n
 - `package-id.txt` is the version plus `-<first 7 characters of the commit>` (CI passes `--build-id`): a computer that already unpacked
   that id does not unpack again, so the same version published again needs a new id to reach it. `version.json` inside the runtime keeps
   the plain version, which is what the updater compares.
-- `Uninstall.bat` / `Uninstall.command` remove the tools, `~/.hs-marimo26` (consent answer and work kept without a key) and the temporary
+- `Uninstall.bat` / `Uninstall.command` remove the tools, `~/.hs-marimo26` (consent answer, course code and work kept without a key) and the temporary
   session copies, after showing the impact and asking for `YES` (pure batch/bash: the runtime's Python is part of what is removed).
   They never touch the course server's copy of a student's work, the browser's stored key, or the folder the zip was unpacked to.
 - The notebooks are numbered (`00_` to `03_`) so the gallery lists them in course order. The notebook ids the course server knows
@@ -74,8 +74,22 @@ To release: `git tag v1.1.0 && git push origin v1.1.0` (or run the *release* wor
 leaves a **draft**. Download the zips from the draft and try them, then press **Publish release**: only then do students and launchers
 see it. A launcher applies the latest release when it has the same MAJOR as the copy it started from.
 
-The two Dhana `.xes` logs are too big for git. They live as files of the release tagged `datasets` (replace the files there when
-the logs change); the build puts them into every student zip, together with a `.csv` made from the parquet the notebooks read.
+## The log that is not public
+
+The log of the two assignment notebooks may not be published, so it is in no commit, package or release of this repository. The
+repository only names it: `notebooks/data/dhana-loan-application.parquet.sha256` holds the hash of the file the notebooks expect.
+A file with such a hash file next to it is never shipped (`is_private` in `build/make_notebooks_zip.py`), so a developer can keep a
+copy in `notebooks/data/` (git ignores it).
+
+Students get it from the course server (provenance-sync, "Course files" in its README): the
+launcher (`coursefiles.py`) asks once for the course code, downloads `/v1/files/<name>` with it, checks the hash and puts the file
+into the runtime's `notebooks/data/`. The code is kept in `~/.hs-marimo26/course-code.txt`. A student who skips the page still
+starts; the assignment notebooks then say that the log is missing, and the next start asks again. `HS_FILES_URL` names another
+server; an empty value turns fetching off.
+
+To change the log: put the new file on the server (`data/files/` there), write its hash into the `.sha256` file
+(`sha256sum notebooks/data/dhana-loan-application.parquet`) and release. Launchers fetch the new file with the saved code, without
+asking. To change the course code, change `PS_FILES_CODE` on the server: computers that already have the log keep working.
 
 Students' own files stay outside the package, in `~/.hs-marimo26/`: `provenance/` (work saved without a key) and `synced/` (the
 local copy of work saved with a key, one folder per key and notebook; the course server holds the other copy). A notebook opened

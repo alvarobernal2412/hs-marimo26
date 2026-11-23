@@ -22,8 +22,10 @@ INSTALLING (ONCE)
 
 3. Wait. It downloads the course tools into a folder called  hs-marimo26  in your home folder, and starts them.
    The very first time it says "Setting up the course tools" and takes a few minutes. Keep the window open.
-4. Then a page asks whether your analyses may be shared with the course (see "Sharing your analyses" below),
-   and your browser shows the list of notebooks. Click the one you need.
+4. Then two pages ask you something, once:
+     - whether your analyses may be shared with the course (see "Sharing your analyses" below);
+     - the course code, to download the course event log (see "The course code" below).
+   After that your browser shows the list of notebooks. Click the one you need.
 
 Only the first step needs the typing window. From now on, you start the notebooks like this:
 
@@ -44,7 +46,7 @@ To start:  double-click Start again. It is always safe to double-click it again,
              - if the notebooks are not running, it starts them;
              - if they are already running, it just opens the page again;
              - if the first setup was cut short, it finishes it (see below).
-Your work is saved under your key, so you lose nothing when you stop.
+Your work is saved as you go, so you lose nothing when you stop.
 
 
 IF YOU CLOSE THE LAPTOP, IT GOES TO SLEEP, OR IT SHUTS DOWN
@@ -58,10 +60,21 @@ IF YOU CLOSE THE LAPTOP, IT GOES TO SLEEP, OR IT SHUTS DOWN
   at the same time while the very first setup is running.
 
 
+THE COURSE CODE
+---------------
+The two assignment notebooks work on an event log that is not public, so it is not part of what you installed.
+The first time you start, a page asks for the course code your teachers gave you (the same code for everyone)
+and downloads the event log to this computer. You do this once.
+- "Not now", or no internet: the notebooks still start. The two lecture notebooks work; the two assignment
+  notebooks tell you that the event log is missing. Double-click Start again and the page comes back.
+- Please do not pass the event log or the course code on to anyone outside the course.
+
+
 YOUR KEY
 --------
-"01 Assignment - Initial Analysis" and "03 Assignment - Process Map" ask for the key your teachers gave you. Paste it once. Your work is saved
-under it and comes back whenever you use the same key, on any computer.
+If you share your analyses (see below), "01 Assignment - Initial Analysis" and "03 Assignment - Process Map" ask for
+your personal key. Paste it once. Your work is saved under it and comes back whenever you use the same key, on any computer.
+The key is not the course code: the course code is the same for everyone, the key is yours alone.
 
 
 SHARING YOUR ANALYSES (OPTIONAL)
@@ -83,6 +96,7 @@ means for your work, and goes ahead only when you type YES.
 - If you shared your analyses with the course server, that copy stays there: Uninstall does not remove it. Enter the same key
   after a new setup and your work comes back. Ask your teachers if you want the server copy deleted too.
 - If you did not share them, they exist only on this computer and are lost for good.
+- The course event log is removed too. After a new setup you enter the course code again.
 - The folder  hs-marimo26  with Start in it stays: delete it yourself when you no longer need it.
 
 
@@ -97,6 +111,9 @@ IF SOMETHING GOES WRONG
     Windows: %LOCALAPPDATA%\hs-marimo26
     Mac:     ~/Library/Application Support/hs-marimo26
   Nothing in it needs administrator rights.
+- An assignment notebook says "The course event log is not on this computer yet": close the window, double-click
+  Start again and enter the course code. "That is not the course code": check for a missing character or a space,
+  or ask your teachers.
 - "This Mac runs macOS ... The course tools need macOS 12 (Monterey) or later": update macOS
   (Apple menu > System Settings or System Preferences > Software Update) and paste the line again.
 - Still stuck? Take a photo of the window and send it to your teachers.
@@ -113,6 +130,5 @@ THE EVENT LOGS
 They are in the "notebooks/data" folder inside the folder the course tools were set up in:
   Windows: %LOCALAPPDATA%\hs-marimo26\runtime\notebooks\data
   Mac:     ~/Library/Application Support/hs-marimo26/runtime/notebooks/data
-- Dhana loan application: dhana-loan-application.xes, dhana-loan-application-molab.xes, dhana-loan-application.csv
-  (the notebooks themselves read dhana-loan-application.parquet, the same log in a format that loads in seconds).
-- Purchasing-Example.csv, SepsisCases2020EventLog.xes.
+- Purchasing-Example.csv and SepsisCases2020EventLog.xes: the public logs of the lecture notebooks.
+- The course event log of the assignments (a .parquet file), once you have entered the course code.
