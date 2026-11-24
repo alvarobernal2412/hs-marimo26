@@ -337,6 +337,21 @@ def _stored_steps(rt) -> list[dict]:
     return steps
 
 
+# Columns that were added to the loaded log after students had saved their work. A stored step whose arguments differ from a new
+# call's only by these columns (in a list of columns, say) is the same step, so it must be matched, not recorded again.
+_ADDED_COLUMNS = (LIFECYCLE_STATE,)
+
+
+def _as_recorded_earlier(value):
+    """`value` as an earlier version of the notebooks would have passed it: without the `_ADDED_COLUMNS`, which are removed from lists
+    and tuples and dropped as dict keys, recursively. Anything else (data frames included) is returned as it is."""
+    if isinstance(value, (list, tuple)):
+        return type(value)(_as_recorded_earlier(item) for item in value if not (isinstance(item, str) and item in _ADDED_COLUMNS))
+    if isinstance(value, dict):
+        return {key: _as_recorded_earlier(item) for key, item in value.items() if not (isinstance(key, str) and key in _ADDED_COLUMNS)}
+    return value
+
+
 def analyst_recorder(rt, adapter):
     """`(record, state_of)` for someone doing the analysis: `record(targets, function, *args, name=None, **kwargs)` runs the step and
     stores it, so that an annotation can be attached to what it produced and the analysis can be replayed step by step.
@@ -356,7 +371,10 @@ def analyst_recorder(rt, adapter):
     def record(targets, function, *args, name=None, **kwargs):
         label = name or function.__name__
         stored = latest.get(label)
-        if label not in matched and stored is not None and stored["param_fingerprint"] == _param_fingerprint(list(args), kwargs):
+        if label not in matched and stored is not None and (
+            stored["param_fingerprint"] == _param_fingerprint(list(args), kwargs)
+            or stored["param_fingerprint"] == _param_fingerprint(_as_recorded_earlier(list(args)), _as_recorded_earlier(kwargs))
+        ):
             matched.add(label)
             result = function(*args, **kwargs)
             for target in targets:
