@@ -43,14 +43,6 @@ def _():
     import warnings as _warnings
     from pathlib import Path
 
-    from tracker import init_marimo
-    from provenance_widget.pmprov_adapter import PmprovAdapter
-    from provenance_widget.widget import ProvenancePanel
-    from provenance_widget.display import show_table
-    from provenance_widget.portable import relocate_artifacts
-    from provenance_widget.repeats import describe_run
-    from provenance_widget.sync import Sync
-
     def _folder_of_this_notebook():
         try:
             folder = Path(str(mo.notebook_location()))
@@ -61,6 +53,19 @@ def _():
         return Path.cwd()
 
     HERE = _folder_of_this_notebook()
+
+    # The provenance panel's library (marimo-pmprov, the module `provenance_widget`): the copy that comes with the notebooks
+    # (vendor/) is found before the installed one, so a start that brings the notebooks up to date brings it up to date too.
+    _vendor = HERE / "vendor"
+    if _vendor.is_dir() and str(_vendor) not in _sys.path:
+        _sys.path.insert(0, str(_vendor))
+    from tracker import init_marimo
+    from provenance_widget.pmprov_adapter import PmprovAdapter
+    from provenance_widget.widget import ProvenancePanel
+    from provenance_widget.display import show_table
+    from provenance_widget.portable import relocate_artifacts
+    from provenance_widget.repeats import describe_run
+    from provenance_widget.sync import Sync
     RAW_URL = "https://raw.githubusercontent.com/alvarobernal2412/bpm/main/"
 
     def project_file(relative, refresh=False):
@@ -174,7 +179,9 @@ def _(PmprovAdapter, ProvenancePanel, rt):
         source=adapter,
         mode="analyst",
         tabs=["curated"],
-        capture_charts=True,  # marimo's Visualize on every table, and the charts built there recorded
+        # marimo's Visualize on every table, and the charts built there recorded and brought back on their own tables. The panel
+        # finds a table's cell by the artifact_name written in it, so every table is shown by a cell of its own (see the README).
+        capture_charts=True,
         empty_hint=(
             "No annotations yet. Press Anchor, click the table (or a cell of it, or a chart you built with Visualize) the annotation is about, write it with tags "
             "(for example intent or finding) and press Add."
@@ -254,18 +261,10 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(ak, du, event_log_from_disk, mo, record, show_table, state_of):
-    # Show the format used for each timestamp column of the event log loaded from disk
+def _(ak, event_log_from_disk, record):
+    # The format used for each timestamp column of the event log loaded from disk (shown in "Initial Timestamp attributes")
     timestamp_format_summary = record(["timestamp_format_summary"], ak.timestamp_formats, event_log_from_disk)
-
-    timestamp_analyzer1 = mo.vstack([
-        mo.md("Showing the format of each timestamp column in the initial event log loaded from disk, if unambiguously detected from the data recorded therein:"),
-        show_table(
-            du.table(timestamp_format_summary),
-            artifact_id=state_of("timestamp_format_summary"), artifact_name="timestamp_formats",
-        ),
-    ])
-    return (timestamp_analyzer1,)
+    return (timestamp_format_summary,)
 
 
 @app.cell(hide_code=True)
@@ -284,9 +283,7 @@ def _(event_log_from_disk, mo, pd):
 
 
 @app.cell(hide_code=True)
-def _(
-    ak, du, event_log_from_disk, mo, record, show_table, state_of, timestamp_attribute_dropdown,
-):
+def _(ak, event_log_from_disk, mo, record, timestamp_attribute_dropdown):
     # Show the granularity level of the encoded timestamps in the log, including whether timestamp components and timezone are constant
     timestamp_component_summary, timestamp_constant_prefixes = record(
         ["timestamp_component_summary", "timestamp_constant_prefixes"], ak.timestamp_components, event_log_from_disk
@@ -297,22 +294,16 @@ def _(
         ak.select_timestamp_component, timestamp_component_summary, timestamp_constant_prefixes, _selected_timestamp,
     )
 
-    granularity_analyzer = mo.vstack([
+    timestamp_component_view, timestamp_prefix_view = _component_view, _prefix_view
+
+    granularity_intro = mo.vstack([
         mo.md(
             f"Showing the precision of '{_selected_timestamp}' and whether any timestamp "
             "elements are constant, based on the data recorded therein:"
         ),
         timestamp_attribute_dropdown,
-        mo.ui.tabs({
-            "Component analysis": show_table(
-                du.table(_component_view), artifact_id=state_of("timestamp_component_view"), artifact_name="timestamp_components"
-            ),
-            "Constant prefixes": show_table(
-                du.table(_prefix_view), artifact_id=state_of("timestamp_prefix_view"), artifact_name="timestamp_constant_prefixes"
-            ),
-        }),
     ])
-    return (granularity_analyzer,)
+    return granularity_intro, timestamp_component_view, timestamp_prefix_view
 
 
 @app.cell(hide_code=True)
@@ -411,13 +402,9 @@ def _(
     ak,
     case_window_slider,
     checkbox,
-    du,
     event_log_from_disk,
     granularity_normalization_dropdown,
-    mo,
     record,
-    show_table,
-    state_of,
     timezone_dropdown,
 ):
     # Log Initialization: time zone, granularity, time frame, constant and empty columns, duplicates, ordering, folding.
@@ -433,19 +420,7 @@ def _(
         CASE_ID,
         COMPLETION_TIME,
     )
-
-    _output = [mo.md("\n".join(f"- {_message}" for _message in initialization_messages))]
-    if not duplicate_event_instances.empty:
-        _output.append(mo.md("The following events had duplicates that have been removed, retaining only one:"))
-        _output.append(
-            show_table(
-                du.table(duplicate_event_instances),
-                artifact_id=state_of("duplicate_event_instances"), artifact_name="duplicate_events",
-            )
-        )
-
-    initialization_summary = mo.vstack([mo.md("### Summary of the Initialization"), *_output])
-    return initialization_summary, initialized_event_log
+    return duplicate_event_instances, initialization_messages, initialized_event_log
 
 
 @app.cell(hide_code=True)
@@ -481,39 +456,107 @@ def _(CASE_ID, COMPLETION_TIME, ak, event_log_from_disk, mo, record, adapter):
 
 
 @app.cell(hide_code=True)
-def _(CASE_ID, COMPLETION_TIME, ak, du, initialized_event_log, mo, record, show_table, state_of):
+def _(CASE_ID, COMPLETION_TIME, ak, initialized_event_log, record):
     # Compute ordering information: are events ordered by completion time within each case and across the log?
-    if initialized_event_log.empty:
-        ordering_info = mo.md("_No case lies within the selected time frame._")
-    else:
+    case_ordering_summary = log_ordering_summary = None  # no case lies within the selected time frame
+    if not initialized_event_log.empty:
         case_ordering_summary, log_ordering_summary = record(
             ["case_ordering_summary", "log_ordering_summary"], ak.ordering_summaries, initialized_event_log, CASE_ID, COMPLETION_TIME
         )
-        ordering_info = mo.hstack([
-            show_table(du.table(case_ordering_summary), artifact_id=state_of("case_ordering_summary"), artifact_name="case_ordering"),
-            show_table(du.table(log_ordering_summary), artifact_id=state_of("log_ordering_summary"), artifact_name="log_ordering"),
-        ])
-    return (ordering_info,)
+    return case_ordering_summary, log_ordering_summary
 
 
 @app.cell(hide_code=True)
-def _(
-    granularity_analyzer,
-    initialization_summary,
-    log_initialization,
-    mo,
-    ordering_info,
-    time_frame_selector,
-    timestamp_analyzer1,
-):
-    mo.ui.tabs({
-        "Log Initialization" : log_initialization,
-        "Initialization Summary" : initialization_summary,
-        "Time Frame" : time_frame_selector,
-        "Granularity Analysis" : granularity_analyzer,
-        "Ordering Info": ordering_info,
-        "Initial Timestamp attributes": timestamp_analyzer1
-    })
+def _(event_log_from_disk, mo):
+    # marimo keeps the charts built with Visualize per cell, so tables that share a cell share their charts. The tabs are
+    # therefore only the strip: what a tab shows is drawn by a cell of its own below, one table per cell.
+    _ = event_log_from_disk  # the strip appears with the log, as its tabs do
+    initialization_tab = mo.ui.tabs({_name: "" for _name in (
+        "Log Initialization", "Initialization Summary", "Time Frame", "Granularity Analysis", "Ordering Info",
+        "Initial Timestamp attributes")})
+    granularity_tab = mo.ui.tabs({"Component analysis": "", "Constant prefixes": ""})
+    initialization_tab
+    return granularity_tab, initialization_tab
+
+
+@app.cell(hide_code=True)
+def _(initialization_tab, log_initialization):
+    log_initialization if initialization_tab.value == "Log Initialization" else None
+    return
+
+
+@app.cell(hide_code=True)
+def _(duplicate_event_instances, du, initialization_messages, initialization_tab, mo, show_table, state_of):
+    _output = None
+    if initialization_tab.value == "Initialization Summary":
+        _output = [mo.md("### Summary of the Initialization"), mo.md("\n".join(f"- {_message}" for _message in initialization_messages))]
+        if not duplicate_event_instances.empty:
+            _output.append(mo.md("The following events had duplicates that have been removed, retaining only one:"))
+            _output.append(
+                show_table(
+                    du.table(duplicate_event_instances),
+                    artifact_id=state_of("duplicate_event_instances"), artifact_name="duplicate_events",
+                )
+            )
+    mo.vstack(_output) if _output else None
+    return
+
+
+@app.cell(hide_code=True)
+def _(initialization_tab, time_frame_selector):
+    time_frame_selector if initialization_tab.value == "Time Frame" else None
+    return
+
+
+@app.cell(hide_code=True)
+def _(granularity_intro, granularity_tab, initialization_tab, mo):
+    mo.vstack([granularity_intro, granularity_tab]) if initialization_tab.value == "Granularity Analysis" else None
+    return
+
+
+@app.cell(hide_code=True)
+def _(du, granularity_tab, initialization_tab, show_table, state_of, timestamp_component_view):
+    show_table(
+        du.table(timestamp_component_view), artifact_id=state_of("timestamp_component_view"), artifact_name="timestamp_components"
+    ) if (initialization_tab.value, granularity_tab.value) == ("Granularity Analysis", "Component analysis") else None
+    return
+
+
+@app.cell(hide_code=True)
+def _(du, granularity_tab, initialization_tab, show_table, state_of, timestamp_prefix_view):
+    show_table(
+        du.table(timestamp_prefix_view), artifact_id=state_of("timestamp_prefix_view"), artifact_name="timestamp_constant_prefixes"
+    ) if (initialization_tab.value, granularity_tab.value) == ("Granularity Analysis", "Constant prefixes") else None
+    return
+
+
+@app.cell(hide_code=True)
+def _(case_ordering_summary, du, initialization_tab, mo, show_table, state_of):
+    _shown = None
+    if initialization_tab.value == "Ordering Info":
+        _shown = mo.md("_No case lies within the selected time frame._") if case_ordering_summary is None else show_table(
+            du.table(case_ordering_summary), artifact_id=state_of("case_ordering_summary"), artifact_name="case_ordering")
+    _shown
+    return
+
+
+@app.cell(hide_code=True)
+def _(du, initialization_tab, log_ordering_summary, show_table, state_of):
+    show_table(
+        du.table(log_ordering_summary), artifact_id=state_of("log_ordering_summary"), artifact_name="log_ordering"
+    ) if initialization_tab.value == "Ordering Info" and log_ordering_summary is not None else None
+    return
+
+
+@app.cell(hide_code=True)
+def _(du, initialization_tab, mo, show_table, state_of, timestamp_format_summary):
+    mo.vstack([
+        mo.md("Showing the format of each timestamp column in the initial event log loaded from disk, if unambiguously detected from the data recorded therein:"),
+        show_table(
+            du.table(timestamp_format_summary),
+            artifact_id=state_of("timestamp_format_summary"), artifact_name="timestamp_formats",
+        ),
+    ]) if initialization_tab.value == "Initial Timestamp attributes" else None
     return
 
 
@@ -676,23 +719,42 @@ def _(
     activity_multiselect,
     ak,
     attribute_classes,
-    du,
     event_log,
     hide_case_features_checkbox,
-    mo,
     record,
-    show_table,
-    state_of,
 ):
-    _selected_activities = list(activity_multiselect.value)
-
     local_attribute_table = record(
         ["local_attribute_table"], ak.local_attribute_view,
-        event_log, _selected_activities, attribute_classes, bool(hide_case_features_checkbox.value),
+        event_log, list(activity_multiselect.value), attribute_classes, bool(hide_case_features_checkbox.value),
         name="local_attribute_view",
     )
+    return (local_attribute_table,)
 
-    local_view = mo.vstack([
+
+@app.cell(hide_code=True)
+def _(ak, attribute_classes, event_log, mo):
+    # The strip of the Events View; each view is drawn by a cell of its own below (one table per cell, see the tabs above).
+    event_views = ak.event_views(event_log, attribute_classes)
+    events_tab = mo.ui.tabs({_name: "" for _name in (
+        "Global Attributes", "Local Attributes", "Case Inspection", "Case Log", "Raw Events")})
+    events_tab
+    return event_views, events_tab
+
+
+@app.cell(hide_code=True)
+def _(du, event_views, events_tab, show_table, state_of):
+    # du.table rather than the frames themselves: a timedelta column pushes marimo's chart builder off the Arrow path.
+    show_table(
+        du.table(event_views["global"]), artifact_id=state_of("initialized_event_log"), artifact_name="global_attributes"
+    ) if events_tab.value == "Global Attributes" else None
+    return
+
+
+@app.cell(hide_code=True)
+def _(
+    activity_multiselect, du, events_tab, hide_case_features_checkbox, local_attribute_table, mo, show_table, state_of,
+):
+    mo.vstack([
         mo.md("Select one or more activities to view only the data attributes that are common to their schemas:"),
         activity_multiselect,
         hide_case_features_checkbox,
@@ -700,24 +762,31 @@ def _(
             du.table(local_attribute_table, pagination=True, page_size=15),
             artifact_id=state_of("local_attribute_table"), artifact_name="local_attributes",
         )
-        if _selected_activities
+        if activity_multiselect.value
         else mo.md("_No activities selected._"),
-    ])
-    return (local_view,)
+    ]) if events_tab.value == "Local Attributes" else None
+    return
 
 
 @app.cell(hide_code=True)
-def _(ak, attribute_classes, case_log, du, event_log, local_view, mo, show_table, state_of):
-    # du.table rather than the frames themselves: a timedelta column pushes marimo's chart builder off the Arrow path.
-    _views = ak.event_views(event_log, attribute_classes)
-    _log_step = state_of("initialized_event_log")
-    mo.ui.tabs({
-        "Global Attributes": show_table(du.table(_views["global"]), artifact_id=_log_step, artifact_name="global_attributes"),
-        "Local Attributes": local_view,
-        "Case Inspection": show_table(du.table(_views["inspection"]), artifact_id=_log_step, artifact_name="case_inspection"),
-        "Case Log": show_table(du.table(case_log), artifact_id=state_of("case_log"), artifact_name="case_log"),
-        "Raw Events": show_table(du.table(event_log), artifact_id=_log_step, artifact_name="raw_events"),
-    })
+def _(du, event_views, events_tab, show_table, state_of):
+    show_table(
+        du.table(event_views["inspection"]), artifact_id=state_of("initialized_event_log"), artifact_name="case_inspection"
+    ) if events_tab.value == "Case Inspection" else None
+    return
+
+
+@app.cell(hide_code=True)
+def _(case_log, du, events_tab, show_table, state_of):
+    show_table(du.table(case_log), artifact_id=state_of("case_log"), artifact_name="case_log") if events_tab.value == "Case Log" else None
+    return
+
+
+@app.cell(hide_code=True)
+def _(du, event_log, events_tab, show_table, state_of):
+    show_table(
+        du.table(event_log), artifact_id=state_of("initialized_event_log"), artifact_name="raw_events"
+    ) if events_tab.value == "Raw Events" else None
     return
 
 
@@ -750,18 +819,29 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(du, mo, partial_schema_usages, schema_usages, show_table, state_of):
-    # Show schemas, schema population, and overlaps
-    mo.ui.tabs({
-        "Activity Schemas": show_table(
-            du.table(schema_usages[['incidence', 'local_attributes', 'missing_values']]),
-            artifact_id=state_of("schema_usages"), artifact_name="activity_schemas",
-        ),
-        "Schema Overlaps": show_table(
-            du.table(partial_schema_usages[(partial_schema_usages != 0).any(axis=1)]),
-            artifact_id=state_of("partial_schema_usages"), artifact_name="schema_overlaps",
-        ),
-    })
+def _(mo, schema_usages):
+    # Show schemas, schema population, and overlaps: the strip here, each table in a cell of its own below
+    _ = schema_usages  # the strip appears with the tables, as its tabs do
+    schemas_tab = mo.ui.tabs({"Activity Schemas": "", "Schema Overlaps": ""})
+    schemas_tab
+    return (schemas_tab,)
+
+
+@app.cell(hide_code=True)
+def _(du, schema_usages, schemas_tab, show_table, state_of):
+    show_table(
+        du.table(schema_usages[['incidence', 'local_attributes', 'missing_values']]),
+        artifact_id=state_of("schema_usages"), artifact_name="activity_schemas",
+    ) if schemas_tab.value == "Activity Schemas" else None
+    return
+
+
+@app.cell(hide_code=True)
+def _(du, partial_schema_usages, schemas_tab, show_table, state_of):
+    show_table(
+        du.table(partial_schema_usages[(partial_schema_usages != 0).any(axis=1)]),
+        artifact_id=state_of("partial_schema_usages"), artifact_name="schema_overlaps",
+    ) if schemas_tab.value == "Schema Overlaps" else None
     return
 
 
