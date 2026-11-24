@@ -34,6 +34,23 @@ The course notebooks as a package students run on their own laptop: no Docker, n
   They never touch the course server's copy of a student's work, the browser's stored key, or the folder the zip was unpacked to.
 - The notebooks are numbered (`00_` to `03_`) so the gallery lists them in course order. The notebook ids the course server knows
   them by (`initial-analysis`, `map-explorer` in `lib/initial_analysis_kit.py`) are unchanged: they name students' saved work.
+- `notebooks/vendor/provenance_widget` is a copy of marimo-pmprov that the notebooks import before the installed one (they put
+  `vendor/` first on the path). A start only brings `notebooks/` up to date, so this is how a new version of marimo-pmprov
+  reaches students without a new package: `python build/vendor_library.py --wheel <the released wheel>` (or `--checkout`),
+  commit, release a MINOR. `vendor/VENDORED.json` names the version and a hash of the files (`tests/test_vendored_library.py`:
+  never edit the copy by hand). It works for a version that needs no library the package lacks; when `build/requirements.txt`
+  has to change, that is a MAJOR. The installed marimo-pmprov stays as it is and is only used where there is no `vendor/`.
+- Every table of a notebook is drawn by a cell of its own (`00`, `01` and `03`): a group of tabs is only the strip (`mo.ui.tabs`
+  with empty panels) and each table is shown by the next cells when its tab is selected. marimo keeps the charts built with
+  *Visualize* in the browser, under the id of the cell that draws the table, so tables that share a cell share their charts
+  (`tests/test_one_table_per_cell.py`). marimo-pmprov (0.16) keeps the recorded charts by the name of their table, which it
+  finds by the `artifact_name` written in the cell that shows it, so they come back on their own tables also after a notebook
+  gained or lost cells (the page is loaded again once, the first time a browser opens such a notebook). `00` records nothing:
+  there a browser that saved charts under other cells starts without them.
+- Dragging a node of the map in `03_assignment-process-map.py` is a recorded step (`arrange_map`, with
+  `provenance_widget.arrangement`): the page reports where the nodes were dragged to, the notebook records it and draws the map
+  with the nodes there, so an annotation written after it shows the map as arranged (and is its own figure in the report), and
+  a notebook that is opened again shows the map as it was left. A map that is drawn again (Refresh) starts as it is drawn.
 - A student who said no to sharing has no course server in the analyst notebooks however they were started (`ak.course_server` reads
   `~/.hs-marimo26/consent.json`), not only through the launcher.
 - `launcher/install.sh` / `install.ps1` are the terminal installers, published as files of every release (not inside the zips). A student pastes
