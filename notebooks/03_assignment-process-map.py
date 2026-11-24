@@ -47,14 +47,6 @@ def _():
     import warnings as _warnings
     from pathlib import Path
 
-    from tracker import init_marimo
-    from provenance_widget.pmprov_adapter import PmprovAdapter
-    from provenance_widget.widget import ProvenancePanel
-    from provenance_widget.display import chart_snapshot, show_chart, show_table
-    from provenance_widget.portable import relocate_artifacts
-    from provenance_widget.repeats import describe_run
-    from provenance_widget.sync import Sync
-
     def _folder_of_this_notebook():
         try:
             folder = Path(str(mo.notebook_location()))
@@ -65,6 +57,23 @@ def _():
         return Path.cwd()
 
     HERE = _folder_of_this_notebook()
+
+    # The provenance panel's library (marimo-pmprov, the module `provenance_widget`): the copy that comes with the notebooks
+    # (vendor/) is found before the installed one, so a start that brings the notebooks up to date brings it up to date too.
+    _vendor = HERE / "vendor"
+    if _vendor.is_dir() and str(_vendor) not in _sys.path:
+        _sys.path.insert(0, str(_vendor))
+    from tracker import init_marimo
+    from provenance_widget.pmprov_adapter import PmprovAdapter
+    from provenance_widget.widget import ProvenancePanel
+    from provenance_widget.display import show_chart, show_table
+    from provenance_widget.portable import relocate_artifacts
+    from provenance_widget.repeats import describe_run
+    from provenance_widget.sync import Sync
+    try:  # where the nodes of the map were dragged to (marimo-pmprov 0.16); without it the map is shown as it is drawn
+        from provenance_widget import arrangement
+    except ImportError:
+        arrangement = None
     RAW_URL = "https://raw.githubusercontent.com/alvarobernal2412/bpm/main/"
 
     def project_file(relative, refresh=False):
@@ -116,7 +125,7 @@ def _():
         SYNC_URL,
         Sync,
         ak,
-        chart_snapshot,
+        arrangement,
         describe_run,
         du,
         init_marimo,
@@ -180,7 +189,9 @@ def _(PmprovAdapter, ProvenancePanel, rt):
         source=adapter,
         mode="analyst",
         tabs=["curated"],
-        capture_charts=True,  # marimo's Visualize on every table, and the charts built there recorded
+        # marimo's Visualize on every table, and the charts built there recorded and brought back on their own tables. The panel
+        # finds a table's cell by the artifact_name written in it, so every table is shown by a cell of its own (see the README).
+        capture_charts=True,
         empty_hint=(
             "No annotations yet. Press Anchor, click the map (or a node or link of it) the annotation is about, write it with tags "
             "(for example intent or finding) and press Add."
@@ -194,6 +205,14 @@ def _(mo, panel):
     # mo.sidebar(...) has to be the last bare expression of its cell to render
     mo.sidebar(panel.sidebar())
     return
+
+
+@app.cell(hide_code=True)
+def _(arrangement, mo):
+    # shows nothing: tells the notebook where the nodes of the map were dragged to (provenance_widget.arrangement)
+    map_arrangement = mo.ui.anywidget(arrangement.NodeArrangement()) if arrangement else None
+    map_arrangement
+    return (map_arrangement,)
 
 
 @app.cell(hide_code=True)
@@ -318,7 +337,25 @@ def _(ak, get_drawn, kit, event_log, mo, panel, record):
 
 
 @app.cell(hide_code=True)
-def _(ak, kit, map_figure, map_meta, mo, path_column, show_chart, state_of):
+def _(adapter, arrangement, kit, map_arrangement, map_figure, panel, record, state_of):
+    # Dragging a node happens in the browser only. Where the nodes were dragged to is recorded as a step of its own, so that an
+    # annotation written after it shows the map as it was arranged, and a notebook that is opened again shows it as it was left.
+    _drawn = state_of("map_figure")
+    _positions = None
+    if map_arrangement is not None:
+        _positions = arrangement.reported(map_arrangement.value, _drawn) or kit.last_arrangement(adapter, _drawn)
+    if _positions:
+        shown_map = record(["arranged_map"], arrangement.arranged, map_figure, _positions, name="arrange_map")
+        shown_map_state = state_of("arranged_map")
+        panel.refresh()  # so that the side panel knows the new step before an annotation is written on it
+    else:
+        shown_map, shown_map_state = map_figure, _drawn
+    return shown_map, shown_map_state
+
+
+@app.cell(hide_code=True)
+def _(ak, arrangement, kit, map_meta, mo, path_column, show_chart, shown_map, shown_map_state, state_of):
+    _chart = show_chart(mo.as_html(shown_map), artifact_id=shown_map_state, artifact_name="process_map")
     mo.vstack([
         mo.md(kit.describe_settings(map_meta["settings"])),
         mo.md(f"**Each path is:** `{path_column}`" if path_column != ak.CASE_ID else ""),
@@ -327,16 +364,11 @@ def _(ak, kit, map_figure, map_meta, mo, path_column, show_chart, state_of):
             mo.md(f"No event of these has a value for the attribute that makes up a path, so not drawn: {', '.join(f'`{a}`' for a in map_meta['left_out'])}."),
             kind="neutral",
         ) if map_meta["left_out"] else mo.md(""),
-        # shown without its picture for the report: drawing that takes a few seconds, and the next cell does it
-        show_chart(mo.as_html(map_figure), artifact_id=state_of("map_figure"), artifact_name="process_map"),
+        # Marked as the map that was drawn, so that the nodes dragged in it are reported for it. No picture of the map is made
+        # here: drawing one takes the notebook several seconds for every map and every drag, and the report draws the map from
+        # the recorded step when it is exported.
+        arrangement.watched(mo, _chart, state_of("map_figure"), pictured=False) if arrangement else _chart,
     ])
-    return
-
-
-@app.cell(hide_code=True)
-def _(chart_snapshot, map_figure, state_of):
-    # the map's picture for the report, made once the map is on the page; picking the map finds it
-    chart_snapshot(map_figure, artifact_id=state_of("map_figure"))
     return
 
 

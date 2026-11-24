@@ -569,6 +569,19 @@ def analyst_recorder(rt, adapter):
     return record, state_of
 
 
+def last_arrangement(adapter, map_id: str) -> str | None:
+    """The positions the nodes of the map `map_id` were last dragged to in the recorded history, or None: the latest `arrange_map`
+    step, when no map was drawn after it and the map it arranged is `map_id`. A notebook that is opened again shows the map as it
+    was left."""
+    drawn, positions = None, None
+    for state_id, node in adapter.get_tree().nodes.items():
+        if node.operation.name == "draw_map":
+            drawn, positions = state_id, None
+        elif node.operation.name == "arrange_map":
+            positions = node.params.get("positions")
+    return positions if drawn == map_id and isinstance(positions, str) and positions else None
+
+
 def last_map_settings(adapter):
     """The settings of the last map that the stored history drew (None when it has none), so that a notebook that is opened again
     can show the explorer as the student left it."""
