@@ -95,8 +95,10 @@ def _(HERE, ak, mo):
 
 @app.cell(hide_code=True)
 def _(ak, mo, stop_button):
-    ak.stop_confirmation(mo) if stop_button.value else None
-    return
+    # made here, not inside the helper: marimo answers the click of a button only when it is a variable of the notebook
+    confirm_stop = mo.ui.button(label="Yes, stop the app", kind="danger", on_click=lambda _: ak.stop_app())
+    ak.stop_confirmation(mo, confirm_stop) if stop_button.value else None
+    return (confirm_stop,)
 
 
 @app.cell(hide_code=True)

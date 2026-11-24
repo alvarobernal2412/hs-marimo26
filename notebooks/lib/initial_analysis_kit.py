@@ -651,15 +651,16 @@ def app_bar(mo, folder, stop_button):
     return mo.hstack([version, stop_button], justify="end", align="center")
 
 
-def stop_confirmation(mo):
-    """What the page shows after "Stop the app" is pressed: a warning and the button that really stops it."""
+def stop_confirmation(mo, confirm_button):
+    """What the page shows after "Stop the app" is pressed: a warning and `confirm_button`, the button that really stops it (made by
+    the notebook, see there)."""
     return mo.callout(
         mo.vstack([
             mo.md(
                 "Stop the app? All open notebooks stop; work that was saved stays saved. Afterwards this page no longer responds: "
                 "close its tab and the window that opened when you started."
             ),
-            mo.ui.button(label="Yes, stop the app", kind="danger", on_click=lambda _: stop_app()),
+            confirm_button,
         ]),
         kind="warn",
     )

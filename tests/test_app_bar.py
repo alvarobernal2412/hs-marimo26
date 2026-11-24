@@ -51,3 +51,31 @@ def test_server_pid_otherwise_is_this_process(monkeypatch):
     monkeypatch.setitem(sys.modules, "__main__", types.SimpleNamespace(__spec__=None))
     monkeypatch.setattr(ak.multiprocessing, "parent_process", lambda: None)
     assert ak.server_pid() == ak.os.getpid()
+
+
+import ast  # noqa: E402
+
+import pytest  # noqa: E402
+
+NOTEBOOKS = [
+    "00_lecture-initial-analysis.py", "01_assignment-initial-analysis.py", "02_lecture-process-map.py", "03_assignment-process-map.py",
+]
+
+
+@pytest.mark.parametrize("notebook", NOTEBOOKS)
+def test_the_confirm_button_is_a_variable_of_the_notebook(notebook):
+    """marimo answers the click of a button only when the button is a global variable of the notebook."""
+    path = Path(__file__).resolve().parents[1] / "notebooks" / notebook
+    cells = [n for n in ast.parse(path.read_text(encoding="utf8")).body if isinstance(n, ast.FunctionDef)]
+    defining = []
+    for cell in cells:
+        for node in ast.walk(cell):
+            if (
+                isinstance(node, ast.Assign) and any(getattr(t, "id", "") == "confirm_stop" for t in node.targets)
+                and isinstance(node.value, ast.Call) and ast.unparse(node.value.func) == "mo.ui.button"
+            ):
+                returned = [n for n in cell.body if isinstance(n, ast.Return)]
+                assert returned and "confirm_stop" in ast.unparse(returned[0]), f"{notebook}: confirm_stop is not returned"
+                defining.append(cell)
+    assert len(defining) == 1, f"{notebook}: no cell makes confirm_stop with mo.ui.button"
+    assert "stop_confirmation(mo, confirm_stop)" in ast.unparse(defining[0])
