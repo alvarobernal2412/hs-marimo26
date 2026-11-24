@@ -1,0 +1,7 @@
+{
+ "package": "marimo-pmprov",
+ "module": "provenance_widget",
+ "version": "0.16.0",
+ "from": "checkout at v0.16.0",
+ "sha256": "fa269e37737480778f9c4c26466d3944d21dd8c721405590cb7b886dcc5e3d78"
+}

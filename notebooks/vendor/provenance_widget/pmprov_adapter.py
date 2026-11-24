@@ -1,0 +1,796 @@
+"""ProvenanceSource adapter backed by a live pmprov RuntimeTracker.
+
+pmprov (https://github.com/alvarobernal2412/pmprov) records provenance
+automatically at the AST level, and — since pmprov 0.5.0 — also has its own
+Annotation/Tag concept (models.annotations), storable against any state/step
+via `rt.annotate()` / `rt.tag()`. This adapter translates pmprov's state/step
+graph into the ProvenanceTree shape this widget renders, including those
+annotations/tags (see `_load_annotations`), and persists new ones committed
+through `ProvenancePanel.commit_annotation()` / the sidebar's composer back
+into pmprov via `persist_annotation()`.
+
+Only imports pmprov lazily inside methods — marimo-pmprov itself has no
+hard dependency on pmprov (see the `pmprov` extra in pyproject.toml).
+"""
+
+from __future__ import annotations
+
+import ast
+import json
+import os
+import threading
+from collections import OrderedDict
+from pathlib import Path
+from typing import Any
+
+from provenance_widget.builder_state import valid_builder_state
+from provenance_widget.chart_tables import (
+    TABLE_OF_TAB,
+    as_drawn,
+    recorded_chart_tabs,
+    with_recorded_aggregations,
+    without_table,
+)
+from provenance_widget.repeats import DEFAULT_MIN_LENGTH, find_repeated_runs
+from provenance_widget.interfaces import (
+    Agent,
+    Annotation,
+    ArtifactRef,
+    ColumnAdded,
+    ColumnRemoved,
+    Delta,
+    Operation,
+    ProvenanceNode,
+    ProvenanceTree,
+    StepCategory,
+    Tag,
+)
+
+# What a picked element is made of. Its snapshot is kept when it is a table's head or a text: the value stored for the step is the
+# variable, which can be a bigger table than the one that was picked (several tables are made from one step), so the report needs the
+# picked one. A picture is left out (it is large, and a recorded figure is drawn from its step).
+_PICKED_KEYS = ('artifactId', 'artifactName', 'granularity', 'detail')
+_KEPT_SNAPSHOT_KINDS = ('table', 'text')
+_PICKED_FILE = 'picked_elements.json'
+_TAGS_FILE = 'note_tags.json'
+
+_SNAPSHOT_CACHE_SIZE = 6  # restored artifact versions kept in memory
+_DEFAULT_TAG_COLOR = "#64748B"
+_TITLE_MAX_LEN = 40
+
+_DEFAULT_CATEGORY = StepCategory.ANALYSIS
+
+
+def _map_category(name: str | None) -> StepCategory:
+    """Map a pmprov step_category name onto this widget's fixed enum.
+
+    Register pmprov step categories with the exact StepCategory member names
+    (DATA_LOADING, CLEANING, FEATURE_ENGINEERING, AGGREGATION, COMPARISON,
+    ANALYSIS) via `tracker.step_category(...)` for a 1:1 mapping — anything
+    else (including pmprov's "unknown" default) falls back to ANALYSIS.
+    """
+    if not name:
+        return _DEFAULT_CATEGORY
+    try:
+        return StepCategory[name.upper()]
+    except KeyError:
+        return _DEFAULT_CATEGORY
+
+
+def _picture_of(png: bytes | None) -> bytes | None:
+    """The PNG bytes of a chart's picture, or None when there is none or it is not a PNG.
+
+    Kept as the PNG itself, not as a decoded image: pmprov stores a decoded image as raw pixels (megabytes for a chart), which the
+    history's zip leaves out, while the PNG is a few kilobytes and the report draws it as it is.
+    """
+    from provenance_widget.element_snapshot import _PNG_MAGIC
+
+    if not png or bytes(png[:8]) != _PNG_MAGIC:
+        return None
+    return bytes(png)
+
+
+def _chart_key(table_name: str, settings: dict) -> str:
+    """One recorded chart: its table and the settings the chart builder showed."""
+    return json.dumps([table_name, settings], sort_keys=True, default=str)
+
+
+def _chart_title(table_name: str, settings: dict) -> str:
+    """"Bar chart of case_log: case_LoanGoal by Count of records" for the artifact's name (what an anchor and the report call it)."""
+    kind = str(settings.get("chart_type") or "Chart")
+    columns = " by ".join(str(settings[k]) for k in ("x", "y") if settings.get(k))
+    return f"{kind} chart of {table_name}" + (f": {columns}" if columns else "")
+
+
+class PmprovAdapter:
+    """Reads a pmprov RuntimeTracker's history as a ProvenanceTree.
+
+    Unlike MockProvenanceSource's fixed snapshot, this tree grows as the
+    notebook runs. Every read here settles the tracker's async storage queue
+    first (see `settle()`), so callers never need to do it themselves —
+    combined with ProvenancePanel's auto-refresh (see widget.py), tracked
+    cells don't need any provenance_widget-specific calls at all.
+    """
+
+    def __init__(self, tracker: Any) -> None:
+        self._rt = tracker
+        # annotation_id -> state_id for annotations persisted through this adapter (others are looked up).
+        self._note_states: dict[str, str] = {}
+        # artifact_state_id -> restored object, LRU (see snapshot())
+        self._values: OrderedDict[str, Any] = OrderedDict()
+        # A recorded state never changes, so its node is built once. Rebuilding every node on every refresh
+        # re-read each state from the database (a connection each) and, past a few hundred states, took longer
+        # than the panel's poll interval, which kept a core busy and starved the notebook. Only a state's
+        # annotations can change, so those are reloaded for the states marked dirty.
+        self._nodes: dict[str, ProvenanceNode] = {}
+        self._branch_names: dict[str, str] = {}
+        self._dirty_annotations: set[str] = set()
+        self._all_annotations_dirty = False
+        self._tree_lock = threading.RLock()
+        self._picked_lock = threading.Lock()
+        self._tags_lock = threading.Lock()
+        # the settings last recorded for each table's chart (by the table's name), so a chart that has not changed is not recorded
+        # again; read from the stored history the first time, so a restarted notebook does not repeat what it already holds
+        self._chart_lock = threading.Lock()
+        self._last_chart: dict[str, dict] | None = None
+        # what the recorded charts left behind, read with _last_chart (see _read_recorded_charts): each table's chart tabs, the
+        # tabs last recorded under each cell id (for a notebook whose cells cannot be asked), and what each recorded chart answered
+        self._chart_tabs: dict[str, list] = {}
+        self._cell_tabs: dict[str, list] = {}
+        self._chart_answers: dict[str, dict] = {}
+        self._author = Agent(
+            agent_id=tracker._agent.agent_id,
+            agent_type=tracker._agent.agent_type.value,
+            display_name=tracker._agent.username or tracker._agent.agent_id,
+        )
+
+    def settle(self) -> None:
+        """Block until every write queued so far has landed in storage.
+
+        rt.storage runs writes through an async executor — without this,
+        a read immediately after a just-run tracked step can see the graph
+        as it was *before* that step, since the write may not have landed
+        yet. A single no-op task submitted to the same (FIFO, single-worker)
+        executor only completes once everything ahead of it has.
+        """
+        self._rt.storage._executor.submit(lambda: None).result()
+
+    def get_tree(self) -> ProvenanceTree:
+        with self._tree_lock:
+            return self._build_tree()
+
+    def _mark_annotations_dirty(self, state_id: str | None) -> None:
+        if state_id is None:
+            self._all_annotations_dirty = True
+        else:
+            self._dirty_annotations.add(state_id)
+
+    def _build_tree(self) -> ProvenanceTree:
+        self.settle()
+        history_id = self._rt._history.history_id
+        graph = self._rt.storage.load_graph(history_id)
+        states_by_id = {s["state_id"]: s for s in graph["states"]}
+        steps = sorted(graph["steps"], key=lambda s: s["timestamp"])
+
+        if not steps:
+            # Nothing tracked yet — a genuinely empty tree, not a
+            # placeholder node (pmprov's own internal root state doesn't
+            # represent an analyst-visible step, so it's never shown).
+            return ProvenanceTree(nodes={}, root_id="", branches={})
+
+        # pmprov's DuckDB/SQLite backend stores this as "" (empty string),
+        # not NULL, for the root state — falsy check, not an `is None` one.
+        tracker_root_id = next(
+            (s["state_id"] for s in states_by_id.values() if not s["produced_by_step_id"]), None
+        )
+
+        nodes: dict[str, ProvenanceNode] = {}
+        branches: dict[str, str] = {}
+
+        # deltas only carry a net rows_delta, not before/after counts, so
+        # row counts are approximated by walking the pipeline in order and
+        # accumulating from 0 at the root — accurate for the common linear
+        # case this adapter is meant for, not for arbitrary branch topologies.
+        running_rows: dict[str, int] = {tracker_root_id: 0}
+
+        # The first tracked step's output becomes the *displayed* root —
+        # pmprov's own tracker_root_id (its synthetic pre-tracking marker)
+        # is never added to `nodes`, so it never renders as a fake
+        # "session start" card. Any other step whose input was the tracker
+        # root gets reparented onto the display root instead (keeps the
+        # tree valid for the common single-branch case; see the note above).
+        display_root_id: str | None = None
+
+        for step in steps:
+            output_id = step["output_state_id"]
+            state = states_by_id.get(output_id)
+            if state is None:
+                continue
+
+            cached = self._nodes.get(output_id)
+            if cached is not None:
+                if self._all_annotations_dirty or output_id in self._dirty_annotations:
+                    cached.annotations = self._load_annotations(output_id)
+                nodes[output_id] = cached
+                running_rows[output_id] = cached.delta.row_count_after
+                branches.setdefault(
+                    state["branch_id"], self._branch_names.get(state["branch_id"], state["branch_id"])
+                )
+                if cached.parent_state_id is None and display_root_id is None:
+                    display_root_id = output_id
+                continue
+
+            detail = self._rt.storage.load_state_detail(output_id)
+            op_info = detail.get("operation") or {}
+            delta_info = detail.get("delta") or {}
+            branch_name = detail.get("branch_name") or state["branch_id"]
+            branches.setdefault(state["branch_id"], branch_name)
+            self._branch_names[state["branch_id"]] = branch_name
+
+            parent_id = step["input_state_id"]
+            is_first_real_step = parent_id == tracker_root_id
+            if is_first_real_step and display_root_id is None:
+                display_root_id = output_id
+                parent_id = None
+            elif is_first_real_step:
+                parent_id = display_root_id
+
+            rows_before = running_rows.get(parent_id, 0) if parent_id is not None else 0
+            rows_after = rows_before + (delta_info.get("rows_delta") or 0)
+            running_rows[output_id] = rows_after
+
+            nodes[output_id] = self._nodes[output_id] = ProvenanceNode(
+                state_id=output_id,
+                parent_state_id=parent_id,
+                branch_id=state["branch_id"],
+                operation=Operation(
+                    operation_id=step["step_id"],
+                    name=op_info.get("name") or step["func_name"],
+                    operation_type=op_info.get("type") or "unknown",
+                    command_name=step["func_name"],
+                    category=_map_category(op_info.get("category")),
+                ),
+                params=self._readable_params(detail.get("params", [])),
+                delta=Delta(
+                    columns_added=[ColumnAdded(name=c, dtype="") for c in delta_info.get("columns_added", [])],
+                    columns_removed=[
+                        ColumnRemoved(name=c, dtype="") for c in delta_info.get("columns_removed", [])
+                    ],
+                    row_count_before=rows_before,
+                    row_count_after=rows_after,
+                ),
+                annotations=self._load_annotations(output_id),
+            )
+
+        self._dirty_annotations.clear()
+        self._all_annotations_dirty = False
+        return ProvenanceTree(nodes=nodes, root_id=display_root_id or "", branches=branches)
+
+    def state_for_artifact(self, artifact_id: str) -> str | None:
+        """pmprov has no separate artifact registry — a "state" *is* the
+        DataFrame/artifact a step produced, so an artifact_id built from
+        `latest_state_id()` (the convention this adapter's callers use, see
+        the demo notebook) is already a real state_id. Confirm it still
+        exists in the current graph before handing it back.
+        """
+        self.settle()
+        history_id = self._rt._history.history_id
+        graph = self._rt.storage.load_graph(history_id)
+        if any(s["state_id"] == artifact_id for s in graph["states"]):
+            return artifact_id
+        return None
+
+    def variable_for_artifact(self, state_id: str, artifact_id: str) -> str | None:
+        """Name of the variable that holds *artifact_id* at *state_id*, else None.
+
+        An annotation's target is the id of the state that produced the output,
+        which is not the artifact version pmprov binds the variable to (pmprov
+        >= 0.8), so the variable is found from the step that created the state.
+        """
+        self.settle()
+        bindings = self._bindings(state_id) or self._legacy_sources(state_id)
+        for name, version in bindings.items():  # the id may already be the bound version
+            if version == artifact_id:
+                return name
+        graph = self._rt.storage.load_graph(self._rt._history.history_id)
+        step = next((s for s in graph["steps"] if s["output_state_id"] == artifact_id), None)
+        if step is None:
+            return None
+        name = self._assigned_name(step.get("raw_line"))
+        if name in bindings:
+            return name
+        before = self._bindings(step["input_state_id"])  # the one variable the step added or changed
+        changed = [n for n, v in bindings.items() if before.get(n) != v]
+        return changed[0] if len(changed) == 1 else None
+
+    def variables_for_artifact(self, state_id: str, artifact_id: str) -> list[str]:
+        """Names of the variables the step that produced *artifact_id* added or changed, in binding order.
+
+        More than one when the step returns a tuple (``figure, meta = ...``), which `variable_for_artifact` cannot choose
+        from. Empty when the step is not known.
+        """
+        self.settle()
+        bindings = self._bindings(state_id) or self._legacy_sources(state_id)
+        graph = self._rt.storage.load_graph(self._rt._history.history_id)
+        step = next((s for s in graph["steps"] if s["output_state_id"] == artifact_id), None)
+        if step is None:
+            return []
+        before = self._bindings(step["input_state_id"])
+        return [n for n, v in bindings.items() if before.get(n) != v]
+
+    def repeated_runs(self, min_length: int = DEFAULT_MIN_LENGTH):
+        """Sequences of `min_length` or more steps that were run again, with the same arguments (see repeats.py).
+
+        Positions are 0-based indexes into the steps in the order they ran. Nothing is changed in the history.
+        """
+        # two steps are the same when they ran the same function with the same (non-data) arguments
+        nodes = self.get_tree().nodes.values()  # in the order the steps ran
+        keys = [(node.operation.name, json.dumps(node.params, sort_keys=True, default=str)) for node in nodes]
+        return find_repeated_runs(keys, min_length)
+
+    def latest_state_id(self, func_name: str | None = None) -> str | None:
+        """Return the output_state_id of the most recent step.
+
+        Pass func_name to disambiguate ("the last time X ran") if steps have
+        happened since; omit it to just mean "whatever ran last". Convenience
+        for notebooks that want to annotate "the step I just ran" without
+        threading state_ids through by hand.
+        """
+        self.settle()
+        history_id = self._rt._history.history_id
+        steps = self._rt.storage.load_graph(history_id)["steps"]
+        candidates = steps if func_name is None else [s for s in steps if s["func_name"] == func_name]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda s: s["timestamp"])["output_state_id"]
+
+    def record_chart(
+        self, artifact_id: str, artifact_name: str, settings: dict, png: bytes | None = None, builder: dict | None = None
+    ) -> dict | None:
+        """Record a chart built in marimo's Visualize tab as a step of the history: which table it is about and its settings.
+
+        The settings are what the chart builder showed (chart type, X, Y, aggregation, sort, color...), never the plotted data. With a
+        PNG of the chart, the step's output is those PNG bytes (the variable `chart_image`), which makes the chart an artifact like any
+        other: it can be anchored, annotated, drawn in the PDF and shown again in reviewer mode.
+
+        `builder` is marimo's own saved state of the chart tabs of the table's cell (see `builder_state`). It is kept with the step, so
+        that `charts_to_restore` can give the tabs back to a browser that has never seen the analysis. A malformed one is ignored.
+        The tabs are kept with the name of their table and with every aggregation that was recorded for them (see `chart_tables`).
+
+        Returns {"stateId", "artifactId" (None without a usable picture), "artifactName"}. A chart that is not new records nothing:
+        - with `builder`, when the table's tabs are the ones recorded last (the analyst is looking at a chart again: another tab, a
+          restart, a reload), the answer is that of the step that recorded these settings, so the chart can still be anchored. It
+          is recorded again only when that step has no picture and this call brings one.
+        - without `builder`, a call with the settings already recorded for that table returns None.
+        """
+        settings = dict(settings)
+        builder = valid_builder_state(builder)
+        picture = _picture_of(png)
+        tabs = None
+        with self._chart_lock:
+            self._read_recorded_charts()
+            if builder is None:
+                if self._last_chart.get(artifact_name) == settings:
+                    return None
+            else:
+                tabs = with_recorded_aggregations([without_table(t) for t in builder["tabs"]], self._chart_tabs.get(artifact_name))
+                known = self._chart_answers.get(_chart_key(artifact_name, settings))
+                looked_at_again = as_drawn(tabs) == as_drawn(self._chart_tabs.get(artifact_name))
+                if looked_at_again and known is not None and (known.get("artifactId") or picture is None):
+                    return dict(known)
+                builder = {"cellId": builder["cellId"], "tabs": [{**t, TABLE_OF_TAB: artifact_name} for t in tabs]}
+            self._last_chart[artifact_name] = settings
+        chart_name = _chart_title(artifact_name, settings)
+        self._rt.trace_step(
+            func=lambda table, settings, builder=None: picture,  # the picture is not an argument: arguments are fingerprinted and stored
+            func_name="visualize_chart",
+            raw_line=f"chart_image = visualize_chart({artifact_name!r}, ...)" if picture is not None else "visualize_chart(...)",
+            # pmprov flattens nested parameter values to text, so the builder state travels as a JSON string and is parsed on the way out
+            args=[artifact_name, settings] + ([json.dumps(builder, sort_keys=True)] if builder is not None else []),
+            kwargs={},
+            targets=["chart_image"] if picture is not None else [],
+        )
+        state_id = self.latest_state_id("visualize_chart")
+        # an annotation targets the state that produced an output (see variable_for_artifact), so that is the chart's artifact id
+        artifact = state_id if picture is not None else None
+        answer = {"stateId": state_id, "artifactId": artifact, "artifactName": chart_name}
+        with self._chart_lock:
+            self._chart_answers[_chart_key(artifact_name, settings)] = dict(answer)
+            if tabs is not None:
+                self._chart_tabs[artifact_name] = tabs
+                self._cell_tabs[builder["cellId"]] = tabs
+        return answer
+
+    def charts_to_restore(self, cells: dict | None = None) -> dict[str, list[dict]]:
+        """cell id -> the chart tabs to put back into a browser that lacks them. What the panel hands to the page.
+
+        With `cells` (name of a table -> the id of the cell that draws it now, see `chart_tables.table_cells`), each table's tabs
+        as they were left, under the cell of that table: a notebook that gained or lost cells since still opens every chart on
+        its own table. Without it, the tabs last recorded under each cell id. Charts recorded without a builder state (older
+        histories) add nothing. Empty on any trouble reading the history."""
+        try:
+            with self._chart_lock:
+                self._read_recorded_charts()
+                if cells:
+                    return {cells[table]: list(tabs) for table, tabs in self._chart_tabs.items() if table in cells and tabs}
+                return {cell: list(tabs) for cell, tabs in self._cell_tabs.items()}
+        except Exception:
+            return {}
+
+    def _read_recorded_charts(self) -> None:
+        """Read once, from the stored steps (oldest first, so later ones win), what the recorded charts left behind. Call it with
+        the chart lock held. On trouble reading the history nothing is known, and charts are recorded as new."""
+        if self._last_chart is not None:
+            return
+        self._last_chart, self._chart_tabs, self._cell_tabs, self._chart_answers = {}, {}, {}, {}
+        try:
+            self.settle()
+            stored = self._rt.storage.load_graph(self._rt._history.history_id)["steps"]
+            pictured = {s["output_state_id"] for s in stored if str(s.get("raw_line") or "").startswith("chart_image")}
+            charts = []
+            for state_id, node in self.get_tree().nodes.items():
+                if node.operation.name != "visualize_chart":
+                    continue
+                table, settings = str(node.params.get("table", "")), dict(node.params.get("settings") or {})
+                self._last_chart[table] = settings
+                self._chart_answers[_chart_key(table, settings)] = {
+                    "stateId": state_id,
+                    "artifactId": state_id if state_id in pictured else None,
+                    "artifactName": _chart_title(table, settings),
+                }
+                try:
+                    raw = node.params.get("builder")
+                    builder = valid_builder_state(json.loads(raw) if isinstance(raw, str) else raw)
+                except ValueError:
+                    continue  # a step whose builder state is not readable adds nothing
+                if builder is not None:
+                    charts.append((table, builder))
+                    self._cell_tabs[builder["cellId"]] = with_recorded_aggregations(
+                        [without_table(t) for t in builder["tabs"]], self._cell_tabs.get(builder["cellId"])
+                    )
+            self._chart_tabs = recorded_chart_tabs(charts)
+        except Exception:
+            pass
+
+    def _load_annotations(self, state_id: str) -> list[Annotation]:
+        """Translate pmprov's stored annotations/tags for *state_id* into this
+        widget's Annotation/Tag dataclasses.
+
+        pmprov tags aren't attached to individual annotations: they hang off the
+        state. A note's own tags are therefore kept next to the database (see
+        `_read_note_tags`) and shown on that note alone. A note saved before that
+        existed has no record and shows its state's tags, as it always did.
+        """
+        raw_annotations = self._rt.storage.load_annotations("analysis_state", state_id)
+        if not raw_annotations:
+            return []
+
+        state_tags = [
+            Tag(name=t["name"], color=_DEFAULT_TAG_COLOR)
+            for t in self._rt.storage.load_tags("analysis_state", state_id)
+        ]
+        own_tags = self._read_note_tags()
+        whole_step = [ArtifactRef(artifact_id=state_id, artifact_name=state_id, granularity="dataset")]
+        picked = self._read_picked()
+
+        return [
+            Annotation(
+                annotation_id=a["annotation_id"],
+                title=(a["text"][:_TITLE_MAX_LEN] or "Untitled annotation"),
+                note=a["text"],
+                tags=(
+                    [Tag(name=name, color=_DEFAULT_TAG_COLOR) for name in own_tags[a["annotation_id"]]]
+                    if a["annotation_id"] in own_tags
+                    else state_tags
+                ),
+                artifacts=self._picked_refs(picked.get(a["annotation_id"])) or whole_step,
+                author=self._author,
+                timestamp=a["created_at"],
+            )
+            for a in raw_annotations
+        ]
+
+    def persist_annotation(self, state_id: str, annotation_dict: dict) -> str | None:
+        """Persist a committed annotation (from `ProvenancePanel.commit_annotation()`
+        or the sidebar composer) into pmprov via `rt.annotate()` / `rt.tag()`.
+
+        Returns the new annotation's annotation_id, or None if state_id
+        doesn't resolve to a real state (e.g. the composer's "composer"
+        placeholder when nothing was targeted) or there's no text to save.
+        """
+        if not state_id or state_id in ("composer", "python"):
+            return None
+        text = annotation_dict.get("note") or annotation_dict.get("title") or ""
+        if not text:
+            return None
+
+        from models.annotations import AnnotatableType
+
+        annotation_id = self._rt.annotate([(AnnotatableType.ANALYSIS_STATE, state_id)], text)
+        self._remember_picked(annotation_id, annotation_dict.get("artifacts"))
+        names = self._tag_names(annotation_dict)
+        for name in names:
+            self._rt.tag(AnnotatableType.ANALYSIS_STATE, state_id, name)
+        self._remember_note_tags(annotation_id, names)
+        self._note_states[annotation_id] = state_id
+        self._mark_annotations_dirty(state_id)
+        return annotation_id
+
+    # The element a note was written about (which map, which table, the clicked part) is not something pmprov
+    # stores: an annotation's only target is a step's state. It is kept in a small file next to the database, so
+    # it moves with the provenance folder and a reloaded note still says what it is about.
+    def _picked_path(self) -> Path:
+        return Path(self._rt.storage.db_path).parent / _PICKED_FILE
+
+    def _read_picked(self) -> dict:
+        try:
+            return json.loads(self._picked_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    def _write_picked(self, picked: dict) -> None:
+        path = self._picked_path()
+        scratch = path.with_name(path.name + ".tmp")
+        scratch.write_text(json.dumps(picked, indent=1), encoding="utf-8")
+        os.replace(scratch, path)
+
+    def _remember_picked(self, annotation_id: str, artifacts: list | None) -> None:
+        refs = [
+            {**{key: ref.get(key) for key in _PICKED_KEYS}, **self._kept_snapshot(ref)}
+            for ref in artifacts or []
+            if isinstance(ref, dict) and ref.get("artifactName")
+        ]
+        if not refs:
+            return
+        with self._picked_lock:
+            picked = self._read_picked()
+            picked[annotation_id] = refs
+            self._write_picked(picked)
+
+    def _forget_picked(self, annotation_id: str) -> None:
+        with self._picked_lock:
+            picked = self._read_picked()
+            if picked.pop(annotation_id, None) is not None or self._picked_path().exists():
+                self._write_picked(picked)
+
+    # The tags of a note. pmprov keeps tags per state, so on its own every note on a step would show the tags of all of
+    # them. Each note's own names are kept in a second small file next to the database; pmprov's state tags stay the
+    # union of its notes' tags.
+    def _tags_path(self) -> Path:
+        return Path(self._rt.storage.db_path).parent / _TAGS_FILE
+
+    def _read_note_tags(self) -> dict[str, list[str]]:
+        try:
+            stored = json.loads(self._tags_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return stored if isinstance(stored, dict) else {}
+
+    def _write_note_tags(self, tags: dict) -> None:
+        path = self._tags_path()
+        scratch = path.with_name(path.name + ".tmp")
+        scratch.write_text(json.dumps(tags, indent=1), encoding="utf-8")
+        os.replace(scratch, path)
+
+    def _remember_note_tags(self, annotation_id: str, names: set[str]) -> None:
+        with self._tags_lock:
+            tags = self._read_note_tags()
+            tags[annotation_id] = sorted(names)
+            self._write_note_tags(tags)
+
+    def _forget_note_tags(self, annotation_id: str) -> None:
+        with self._tags_lock:
+            tags = self._read_note_tags()
+            if tags.pop(annotation_id, None) is not None:
+                self._write_note_tags(tags)
+
+    @staticmethod
+    def _kept_snapshot(ref: dict) -> dict:
+        snapshot = ref.get("snapshot")
+        if isinstance(snapshot, dict) and (snapshot.get("kind") or "table") in _KEPT_SNAPSHOT_KINDS:
+            return {"snapshot": snapshot}
+        return {}
+
+    @staticmethod
+    def _picked_refs(stored: list | None) -> list[ArtifactRef]:
+        return [
+            ArtifactRef(
+                artifact_id=ref.get("artifactId") or "",
+                artifact_name=ref["artifactName"],
+                granularity=ref.get("granularity") or "dataset",
+                detail=ref.get("detail"),
+                snapshot=ref.get("snapshot") if isinstance(ref.get("snapshot"), dict) else None,
+            )
+            for ref in stored or []
+            if isinstance(ref, dict) and ref.get("artifactName")
+        ]
+
+    @staticmethod
+    def _tag_names(annotation_dict: dict) -> set[str]:
+        return {
+            tag["name"]
+            for tag in annotation_dict.get("tags") or []
+            if isinstance(tag, dict) and tag.get("name")
+        }
+
+    def _annotation_state(self, annotation_id: str) -> str | None:
+        """The state an annotation is attached to (searched when it was persisted in an earlier session)."""
+        known = self._note_states.get(annotation_id)
+        if known:
+            return known
+        graph = self._rt.storage.load_graph(self._rt._history.history_id)
+        for state in graph["states"]:
+            stored = self._rt.storage.load_annotations("analysis_state", state["state_id"])
+            if any(a["annotation_id"] == annotation_id for a in stored):
+                return state["state_id"]
+        return None
+
+    def _state_tag_names(self, state_id: str) -> set[str]:
+        return {t["name"] for t in self._rt.storage.load_tags("analysis_state", state_id)}
+
+    def remove_annotation(self, annotation_id: str) -> None:
+        """Delete an annotation from pmprov, together with the tags that belonged to it.
+
+        pmprov tags hang off the state, so a tag of this note is removed from the
+        state only when no other note on it carries it. A note saved before notes
+        had tags of their own shows the state's tags, so while one is left they all stay.
+        """
+        from models.annotations import AnnotatableType
+
+        state_id = self._annotation_state(annotation_id)
+        own_tags = self._read_note_tags()
+        owned = set(own_tags[annotation_id]) if annotation_id in own_tags else None
+        self._rt.remove_annotation(annotation_id)
+        self._forget_picked(annotation_id)
+        self._forget_note_tags(annotation_id)
+        self._note_states.pop(annotation_id, None)
+        self._mark_annotations_dirty(state_id)
+        if state_id is None:
+            return
+        remaining = [a["annotation_id"] for a in self._rt.storage.load_annotations("analysis_state", state_id)]
+        if owned is None:
+            stale = self._state_tag_names(state_id) if not remaining else set()
+        elif any(other not in own_tags for other in remaining):
+            stale = set()  # a note without a record of its own still shows them
+        else:
+            stale = owned - set().union(*(set(own_tags[o]) for o in remaining)) if remaining else owned
+        for name in stale:
+            self._rt.untag(AnnotatableType.ANALYSIS_STATE, state_id, name)
+
+    def update_annotation(self, annotation_id: str, annotation_dict: dict) -> None:
+        """Replace an annotation's text and tags. Its tags are its own; pmprov's tags of the state follow as their union."""
+        text = annotation_dict.get("note") or annotation_dict.get("title") or ""
+        if not text:
+            return
+
+        from models.annotations import AnnotatableType
+
+        self._rt.update_annotation(annotation_id, text)
+        state_id = self._annotation_state(annotation_id)
+        self._mark_annotations_dirty(state_id)
+        if state_id is None:
+            return
+        own_tags = self._read_note_tags()
+        old_names = set(own_tags[annotation_id]) if annotation_id in own_tags else self._state_tag_names(state_id)
+        new_names = self._tag_names(annotation_dict)
+        self._remember_note_tags(annotation_id, new_names)
+        self._note_states[annotation_id] = state_id
+        others = [
+            a["annotation_id"]
+            for a in self._rt.storage.load_annotations("analysis_state", state_id)
+            if a["annotation_id"] != annotation_id
+        ]
+        for name in new_names - self._state_tag_names(state_id):
+            self._rt.tag(AnnotatableType.ANALYSIS_STATE, state_id, name)
+        if all(other in own_tags for other in others):  # otherwise a note without a record may still show the tag
+            kept = set().union(*(set(own_tags[o]) for o in others)) if others else set()
+            for name in old_names - new_names - kept:
+                self._rt.untag(AnnotatableType.ANALYSIS_STATE, state_id, name)
+
+    @staticmethod
+    def _readable_params(raw_params: list[dict]) -> dict:
+        """pmprov's parameter records as plain `name: value`.
+
+        Drops references to input artifacts (the data a step ran on, not a
+        setting) and the "function:" prefix on parameter ids, so the sidebar
+        shows what the analyst chose, e.g. `year = 2008`.
+        """
+        params: dict = {}
+        for record in raw_params:
+            value = record.get("value")
+            if isinstance(value, dict) and "value_type" in value:
+                if value["value_type"] == "artifact_state_ref":
+                    continue
+                value = value.get("value")
+            params[record["param_id"].split(":", 1)[-1]] = value
+        return params
+
+    def _bindings(self, state_id: str) -> dict[str, str]:
+        """Variable name -> artifact version bound at *state_id* ({} before pmprov 0.8 / for old histories)."""
+        loader = getattr(self._rt.storage, "load_state_bindings", None)
+        return loader(state_id) if loader else {}
+
+    def _restore(self, state_id: str, name: str) -> Any:
+        """One variable of one state. pmprov < 0.8 cannot restore a single name, so it loads the state and picks it."""
+        try:
+            return self._rt.restore_state(state_id, names=[name]).variables.get(name)
+        except TypeError:  # an older restore_state() without the names argument
+            return self._rt.restore_state(state_id).variables.get(name)
+
+    @staticmethod
+    def _assigned_name(raw_line: str | None) -> str | None:
+        """Name bound by a single-target ``name = call(...)`` step line."""
+        if not raw_line:
+            return None
+        try:
+            node = ast.parse(raw_line.strip()).body[0]
+        except (SyntaxError, IndexError):
+            return None
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            return node.targets[0].id
+        return None
+
+    def _legacy_sources(self, state_id: str) -> dict[str, str]:
+        """For a state recorded before pmprov 0.8 (no bindings): variable name ->
+        output state of the newest step on the path that assigned it.
+
+        A step's own output restores exactly even in old histories, and the
+        namespace at a state is the latest output of each variable along its
+        path, so this is exact (pmprov's old per-state restore was not).
+        """
+        graph = self._rt.storage.load_graph(self._rt._history.history_id)
+        by_output = {s["output_state_id"]: s for s in graph["steps"]}
+        sources: dict[str, str] = {}
+        current = state_id
+        while current in by_output:  # newest first: the first assignment of a name wins
+            step = by_output[current]
+            name = self._assigned_name(step.get("raw_line"))
+            if name and name not in sources:
+                sources[name] = step["output_state_id"]
+            current = step["input_state_id"]
+        return sources
+
+    def snapshot_produced(self, state_id: str, parent_id: str | None) -> set[str]:
+        """Names of the variables the step that ended at *state_id* (re)bound: the ones whose value differs from the parent state's."""
+        self.settle()
+        now = self._bindings(state_id)
+        before = self._bindings(parent_id) if parent_id else {}
+        return {name for name, version in now.items() if before.get(name) != version}
+
+    def snapshot_bindings(self, state_id: str) -> set[str]:
+        """Names of the variables bound at *state_id*, without loading any data."""
+        self.settle()
+        bindings = self._bindings(state_id)
+        return set(bindings) if bindings else set(self._legacy_sources(state_id))
+
+    def snapshot(self, state_id: str, names: list[str] | None = None) -> dict[str, Any]:
+        """The variables bound at *state_id*, exactly as they were (all, or just *names*).
+
+        Works with every pmprov: 0.8+ records exact bindings per state; older
+        pmprov (and histories recorded before 0.8) are rebuilt from the step
+        that last assigned each variable, which is also exact but loads more.
+        Names that are not bound there, or whose value pmprov could not load,
+        are simply absent. Loaded values are cached by artifact version, so a
+        frame that many states share (the raw event log) is read once. Treat
+        the returned objects as read-only: they are shared with the cache.
+        """
+        self.settle()
+        bindings = self._bindings(state_id)
+        legacy = {} if bindings else self._legacy_sources(state_id)
+        known = bindings or legacy
+        wanted = list(known) if names is None else [n for n in names if n in known]
+        variables: dict[str, Any] = {}
+        for name in wanted:
+            version = bindings[name] if bindings else f"{legacy[name]}:{name}"
+            if version in self._values:
+                self._values.move_to_end(version)
+                variables[name] = self._values[version]
+                continue
+            source_state = state_id if bindings else legacy[name]
+            value = self._restore(source_state, name)
+            if value is not None:
+                self._values[version] = value
+                variables[name] = value
+        while len(self._values) > _SNAPSHOT_CACHE_SIZE:
+            self._values.popitem(last=False)
+        return variables
