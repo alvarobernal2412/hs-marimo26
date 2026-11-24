@@ -52,6 +52,26 @@ def log_is_missing(folder) -> bool:
     return not (Path(folder) / DHANA).is_file()
 
 
+LIFECYCLE_STATE = "lifecycle_state"
+# Whether the activity is being worked on after the event: "on" from a start or a resume, "off" otherwise. Other values have no state.
+LIFECYCLE_STATES = {
+    "start": "on", "resume": "on",
+    "complete": "off", "suspend": "off", "schedule": "off", "withdraw": "off", "ate_abort": "off",
+}
+
+
+def add_lifecycle_state(log: pd.DataFrame) -> pd.DataFrame:
+    """A copy of `log` with the `lifecycle_state` column ("on" or "off", see `LIFECYCLE_STATES`) right after `lifecycle_transition`;
+    a transition that is not in that table, or is missing, has no state. A log without a lifecycle, or that has the column already,
+    is returned as it is."""
+    if LIFECYCLE not in log.columns or LIFECYCLE_STATE in log.columns:
+        return log
+    state = log[LIFECYCLE].map(LIFECYCLE_STATES).astype("string")
+    out = log.copy()
+    out.insert(list(out.columns).index(LIFECYCLE) + 1, LIFECYCLE_STATE, state)
+    return out
+
+
 def load_event_log(path) -> pd.DataFrame:
     """The Dhana log, from its `.parquet` (what the notebooks use) or from the `.xes` of it (keys already the notebooks' column names)."""
     path = Path(path)
@@ -61,8 +81,8 @@ def load_event_log(path) -> pd.DataFrame:
         log = read_xes(str(path), verbatim=True)
         if ACTIVITY_EXTENDED in log.columns:  # where the parquet has it: last
             log = log[[c for c in log.columns if c != ACTIVITY_EXTENDED] + [ACTIVITY_EXTENDED]]
-        return log
-    return pd.read_parquet(path)
+        return add_lifecycle_state(log)
+    return add_lifecycle_state(pd.read_parquet(path))
 
 
 def timestamp_formats(log: pd.DataFrame) -> pd.DataFrame:
@@ -186,13 +206,14 @@ def classify_attributes(log: pd.DataFrame, case_id: str, activity: str, completi
 def build_case_log(
     log: pd.DataFrame, case_id: str, activity: str, completion_time: str, case_features: list, enrichment_code: str | None = None
 ) -> pd.DataFrame:
-    """One row per case: start, end, number of events and the case-level attributes; then the student's enrichment code, if any,
+    """One row per case: start, end, duration, number of events and the case-level attributes; then the student's enrichment code, if any,
     run with `case_log`, `event_log`, `pd` and the names of `enrichment_names` (`CASE_ID`, ...) in scope. An error in that code
     propagates."""
     grouped = log.groupby(case_id)
     cases = grouped.agg(
         start_time=(completion_time, "first"), end_time=(completion_time, "last"), no_of_events=(activity, "count")
     )
+    cases.insert(2, "duration", cases["end_time"] - cases["start_time"])  # right after end_time
     extra = [c for c in case_features if c not in cases.columns and c != "folded_data"]
     if extra:
         folded = grouped[extra].first()
@@ -531,11 +552,11 @@ def write_notebook_info(folder, notebook: str, source, version: str | None = Non
 def normalise_log(log: pd.DataFrame) -> pd.DataFrame:
     """Any event log with the column names of the course notebooks: colons in names become underscores (the marimo explorer breaks
     on them), and an `activity_extended` column ("<activity>_<lifecycle>") is added when the log has a lifecycle and no such column
-    yet."""
+    yet. The `lifecycle_state` column is added too (see `add_lifecycle_state`)."""
     out = log.rename(columns=lambda name: str(name).replace(":", "_"))
     if ACTIVITY_EXTENDED not in out.columns and {ACTIVITY, LIFECYCLE} <= set(out.columns):
         out[ACTIVITY_EXTENDED] = out[ACTIVITY].astype("string") + "_" + out[LIFECYCLE].astype("string")
-    return out
+    return add_lifecycle_state(out)
 
 
 def read_log(path) -> pd.DataFrame:
