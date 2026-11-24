@@ -82,7 +82,21 @@ def _():
         _sys.path.insert(0, str(_lib[0].parent))
     import initial_analysis_kit as ak
 
-    return ak, kit, mo, pd, project_file
+    return HERE, ak, kit, mo, pd, project_file
+
+
+@app.cell(hide_code=True)
+def _(HERE, ak, mo):
+    # The version of the notebooks and the button that stops the app, on every page, before anything else (also before a key is entered)
+    stop_button = mo.ui.run_button(label="Stop the app")
+    ak.app_bar(mo, HERE, stop_button)
+    return (stop_button,)
+
+
+@app.cell(hide_code=True)
+def _(ak, mo, stop_button):
+    ak.stop_confirmation(mo) if stop_button.value else None
+    return
 
 
 @app.cell(hide_code=True)

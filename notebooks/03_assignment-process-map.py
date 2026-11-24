@@ -141,6 +141,20 @@ def _():
 
 
 @app.cell(hide_code=True)
+def _(HERE, ak, mo):
+    # The version of the notebooks and the button that stops the app, on every page, before anything else (also before a key is entered)
+    stop_button = mo.ui.run_button(label="Stop the app")
+    ak.app_bar(mo, HERE, stop_button)
+    return (stop_button,)
+
+
+@app.cell(hide_code=True)
+def _(ak, mo, stop_button):
+    ak.stop_confirmation(mo) if stop_button.value else None
+    return
+
+
+@app.cell(hide_code=True)
 def _(SYNC_URL, kit, mo):
     key_box = mo.ui.anywidget(kit.KeyBox()) if SYNC_URL else None
     mo.vstack([mo.md("### Your key"), key_box]) if key_box is not None else mo.md("")

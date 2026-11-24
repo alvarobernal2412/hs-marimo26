@@ -94,7 +94,21 @@ def _():
 
     _ = du.enable_chart_builder()  # marimo's Visualize button on every table, also in the app (assigned: a bare call showed its True)
 
-    return ak, charts_of_this_layout, du, mo, pd, project_file, tcu
+    return HERE, ak, charts_of_this_layout, du, mo, pd, project_file, tcu
+
+
+@app.cell(hide_code=True)
+def _(HERE, ak, mo):
+    # The version of the notebooks and the button that stops the app, on every page, before anything else (also before a key is entered)
+    stop_button = mo.ui.run_button(label="Stop the app")
+    ak.app_bar(mo, HERE, stop_button)
+    return (stop_button,)
+
+
+@app.cell(hide_code=True)
+def _(ak, mo, stop_button):
+    ak.stop_confirmation(mo) if stop_button.value else None
+    return
 
 
 @app.cell(hide_code=True)

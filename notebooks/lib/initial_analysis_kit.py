@@ -11,8 +11,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import multiprocessing
 import os
+import signal
+import sys
 import tempfile
+import threading
 from pathlib import Path
 
 import pandas as pd
@@ -608,3 +612,54 @@ def guess_mandatory(columns: list, timestamp_columns: list) -> dict:
         or (timestamps[-1] if timestamps else None)
     )
     return {"case_id": case_id, "activity": activity, "completion_time": completion}
+
+
+# --- the version and "Stop the app" -------------------------------------------------------------------------------------------------
+
+
+def notebooks_version(folder) -> str:
+    """The version of the notebooks: the `version` in the `version.json` that the runtime keeps beside the `notebooks/` folder. A
+    copy that is not run from the student package has no such file (or an unreadable one) and is a "development copy"."""
+    try:
+        return str(json.loads((Path(folder).parent / "version.json").read_text(encoding="utf8"))["version"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return "development copy"
+
+
+def server_pid() -> int:
+    """The process of the marimo server that runs this notebook. `marimo run <folder>` (what the launcher does) starts each notebook in
+    an "app host" process, a child of the server. A notebook of `marimo edit` runs in a `multiprocessing` child of the server. With
+    `marimo run <file>` the notebook is a thread of the server itself."""
+    spec = getattr(sys.modules.get("__main__"), "__spec__", None)
+    if str(getattr(spec, "name", "") or "").startswith("marimo._session.app_host"):
+        return os.getppid()
+    parent = multiprocessing.parent_process()
+    if parent is not None:
+        return parent.pid
+    return os.getpid()
+
+
+def stop_app(delay: float = 1.0) -> None:
+    """Ends the marimo server (and with it every open notebook) after `delay` seconds, so that the click that asked for it still
+    gets its answer."""
+    threading.Timer(delay, lambda: os.kill(server_pid(), signal.SIGTERM)).start()
+
+
+def app_bar(mo, folder, stop_button):
+    """One row at the right of the page: the version of the notebooks in small grey text, and the button that stops the app."""
+    version = mo.md(f'<span style="color:#6b7280;font-size:0.8em">Version {notebooks_version(folder)}</span>')
+    return mo.hstack([version, stop_button], justify="end", align="center")
+
+
+def stop_confirmation(mo):
+    """What the page shows after "Stop the app" is pressed: a warning and the button that really stops it."""
+    return mo.callout(
+        mo.vstack([
+            mo.md(
+                "Stop the app? All open notebooks stop; work that was saved stays saved. Afterwards this page no longer responds: "
+                "close its tab and the window that opened when you started."
+            ),
+            mo.ui.button(label="Yes, stop the app", kind="danger", on_click=lambda _: stop_app()),
+        ]),
+        kind="warn",
+    )

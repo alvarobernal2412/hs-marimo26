@@ -63,6 +63,8 @@ The course notebooks as a package students run on their own laptop: no Docker, n
   The release build runs `install.sh` on both Mac runners (setup + the native files load).
 - `build/`: `build_runtime.py` makes the per-OS student zip, `make_notebooks_zip.py` the `notebooks.zip` of a release.
 - `.github/workflows/release.yml`: on a `v*` tag, builds the three student zips and `notebooks.zip` and drafts the release.
+- Every notebook shows the version of the notebooks (`ak.notebooks_version`, read from the `version.json` beside `notebooks/`, or "development copy") and a "Stop the app" button at the top right (`ak.app_bar`, `ak.stop_confirmation`, `ak.stop_app`). They live in the notebooks, so they ship as a MINOR; the line in the terminal about an update waits for the next MAJOR.
+- The process maps (`02` and `03`) let the student choose the activity column and a time frame, and the event log has a `lifecycle_state` column ("on" or "off", `ak.add_lifecycle_state`) and the case log a `duration` column (`ak.to_lcm_log`, `ak.cases_in_time_frame`, `ak.build_case_log`).
 
 ## Releases
 
