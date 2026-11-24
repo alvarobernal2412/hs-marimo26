@@ -137,13 +137,16 @@ def _(ak, event_log, kit, mo):
         }
     )
     get_drawn, set_drawn = mo.state(initial_settings)
-    return activity_column_dropdown, explorer_notions, get_drawn, initial_settings, map_time_frame, set_drawn, time_frame_slider
+    # The controls that do not depend on the activity column (see `kit.KEPT_CONTROLS`), as the analyst last set them. A plain dict, not
+    # a state: it is filled by the cell below and read by the cell that builds the controls, which must not run again when it changes.
+    kept_controls = {}
+    return activity_column_dropdown, explorer_notions, get_drawn, initial_settings, kept_controls, map_time_frame, set_drawn, time_frame_slider
 
 
 @app.cell(hide_code=True)
-def _(activity_column_dropdown, event_log, explorer_notions, initial_settings, kit, mo):
+def _(activity_column_dropdown, event_log, explorer_notions, initial_settings, kept_controls, kit, mo):
     # Choosing another activity column builds the activity picker (and the folds) again for that column; the map is not drawn again
-    # until Refresh is pressed.
+    # until Refresh is pressed. The other controls keep what the analyst set (`kept_controls`, empty the first time this runs).
     activity_column = activity_column_dropdown.value
     explorer_names = sorted(event_log[activity_column].dropna().unique())
     if activity_column == initial_settings["activity_column"]:
@@ -157,8 +160,15 @@ def _(activity_column_dropdown, event_log, explorer_notions, initial_settings, k
                 "time_frame": initial_settings["time_frame"],
             }
         )
-    map_controls = kit.map_controls(mo, explorer_names, draft_settings, explorer_notions)
+    map_controls = kit.map_controls(mo, explorer_names, kit.normalise_settings({**draft_settings, **kept_controls}), explorer_notions)
     return activity_column, explorer_names, map_controls
+
+
+@app.cell(hide_code=True)
+def _(kept_controls, kit, map_controls):
+    # Runs whenever a control changes: remembers the controls that survive a change of the activity column. Shows nothing.
+    kept_controls.update(kit.kept_controls_of(map_controls.value))
+    return
 
 
 @app.cell(hide_code=True)

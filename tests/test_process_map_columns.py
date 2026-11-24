@@ -122,3 +122,21 @@ def test_lcm_log_arguments_give_the_same_log_as_the_direct_call():
     for arguments in [(ak.CASE_ID,), (ak.CASE_ID, "lifecycle_transition"), (ak.CASE_ID, ak.ACTIVITY, [0, 5])]:
         direct = ak.to_lcm_log(log, *arguments)
         assert ak.to_lcm_log(log, *ak.lcm_log_arguments(*arguments)).equals(direct)
+
+
+def test_kept_controls_are_the_four_that_do_not_depend_on_the_activity_column():
+    value = {
+        "activities": ["a"], "map_type": "sequence_based", "case_notion": "offer", "allow_loops": True, "show_empty": True, "folds": [],
+    }
+    assert kit.kept_controls_of(value) == {
+        "map_type": "sequence_based", "case_notion": "offer", "allow_loops": True, "show_empty": True,
+    }
+    assert tuple(kit.kept_controls_of(value)) == kit.KEPT_CONTROLS
+
+
+def test_kept_controls_overlay_the_draft_settings():
+    draft = kit.normalise_settings({"activities": ["a"], "case_notion": "application"})
+    kept = kit.kept_controls_of({"map_type": "sequence_based", "case_notion": "offer", "allow_loops": True, "show_empty": True})
+    merged = kit.normalise_settings({**draft, **kept})
+    assert (merged["map_type"], merged["case_notion"], merged["allow_loops"], merged["show_empty"]) == ("sequence_based", "offer", True, True)
+    assert merged["activities"] == ["a"]

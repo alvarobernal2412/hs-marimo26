@@ -449,6 +449,16 @@ def map_controls(mo, names: list, settings: dict | None, case_notions: dict):
     )
 
 
+# The controls that do not depend on the activity column: when the column is chosen again the controls are built again (the options of
+# the activity picker and the folds are the values of the column), and these four keep what the analyst had set.
+KEPT_CONTROLS = ("map_type", "case_notion", "allow_loops", "show_empty")
+
+
+def kept_controls_of(value: dict) -> dict:
+    """The `KEPT_CONTROLS` of the controls' value, as settings (the dropdowns hold the keys the settings use)."""
+    return {key: value[key] for key in KEPT_CONTROLS if key in value}
+
+
 def settings_from(value: dict, names: list) -> dict:
     """The settings that the controls' value describes."""
     activities = list(value["activities"])
