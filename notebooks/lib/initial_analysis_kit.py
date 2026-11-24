@@ -465,6 +465,18 @@ def _events_in_time_frame(log: pd.DataFrame, window) -> pd.DataFrame:
     return tcu.filter_cases_within_window(log, CASE_ID, TIMESTAMP, start, end)
 
 
+def time_frame_window(value, stop: int) -> list[int] | None:
+    """The time frame that `value` (the slider's value, or a window recorded in an earlier session) stands for: [from, to] as whole
+    numbers within 0 to `stop`. None means the whole log: it is the whole range, there is no value, or the value is not two numbers
+    (so a damaged history opens with the whole log instead of failing)."""
+    try:
+        low, high = value
+        window = [min(max(int(low), 0), stop), min(max(int(high), 0), stop)]
+    except (TypeError, ValueError):
+        return None
+    return None if window == [0, stop] else window
+
+
 def cases_in_time_frame(log: pd.DataFrame, window) -> tuple[int, int]:
     """(cases, events) that lie completely inside `window`."""
     events = _events_in_time_frame(log, window)

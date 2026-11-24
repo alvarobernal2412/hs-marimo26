@@ -298,10 +298,7 @@ def _(adapter, ak, event_log, kit, mo):
     # activity column does not move it.
     map_time_frame = ak.time_frame(event_log, ak.CASE_ID, ak.TIMESTAMP)
     _stop = map_time_frame["stop"]
-    _window = None
-    if isinstance(_recorded.get("window"), (list, tuple)) and len(_recorded["window"]) == 2:
-        _window = [min(max(int(w), 0), _stop) for w in _recorded["window"]]
-        _window = None if _window == [0, _stop] else _window
+    _window = ak.time_frame_window(_recorded.get("window"), _stop)
     time_frame_slider = mo.ui.range_slider(
         start=0, stop=_stop, step=1, value=_window or [0, _stop], full_width=True, debounce=True,
         label=f"Time frame in {'days' if map_time_frame['unit'] == 'D' else 'hours'} after {map_time_frame['start']}",
@@ -344,12 +341,12 @@ def _(activity_column_dropdown, event_log, explorer_notions, initial_settings, k
 
 
 @app.cell(hide_code=True)
-def _(activity_column, explorer_names, kit, map_controls, map_time_frame, mo, set_drawn, time_frame_slider):
+def _(activity_column, ak, explorer_names, kit, map_controls, map_time_frame, mo, set_drawn, time_frame_slider):
     refresh_button = mo.ui.button(
         label="Refresh visualization", kind="success",
         on_click=lambda _: set_drawn({
             **kit.settings_from(map_controls.value, explorer_names), "activity_column": activity_column,
-            "time_frame": None if list(time_frame_slider.value) == [0, map_time_frame["stop"]] else list(time_frame_slider.value),
+            "time_frame": ak.time_frame_window(time_frame_slider.value, map_time_frame["stop"]),
         }),
     )
     return (refresh_button,)
@@ -357,7 +354,7 @@ def _(activity_column, explorer_names, kit, map_controls, map_time_frame, mo, se
 
 @app.cell(hide_code=True)
 def _(activity_column, activity_column_dropdown, ak, event_log, explorer_names, explorer_notions, get_drawn, kit, map_controls, map_time_frame, mo, refresh_button, time_frame_slider):
-    _window = None if list(time_frame_slider.value) == [0, map_time_frame["stop"]] else list(time_frame_slider.value)
+    _window = ak.time_frame_window(time_frame_slider.value, map_time_frame["stop"])
     _current = {**kit.settings_from(map_controls.value, explorer_names), "activity_column": activity_column, "time_frame": _window}
     # the count follows the slider at once; the map changes only when Refresh is pressed
     _cases, _events = ak.cases_in_time_frame(event_log, _window)

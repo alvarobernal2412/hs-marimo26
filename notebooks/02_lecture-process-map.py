@@ -162,12 +162,12 @@ def _(activity_column_dropdown, event_log, explorer_notions, initial_settings, k
 
 
 @app.cell(hide_code=True)
-def _(activity_column, explorer_names, kit, map_controls, map_time_frame, mo, set_drawn, time_frame_slider):
+def _(activity_column, ak, explorer_names, kit, map_controls, map_time_frame, mo, set_drawn, time_frame_slider):
     refresh_button = mo.ui.button(
         label="Refresh visualization", kind="success",
         on_click=lambda _: set_drawn({
             **kit.settings_from(map_controls.value, explorer_names), "activity_column": activity_column,
-            "time_frame": None if list(time_frame_slider.value) == [0, map_time_frame["stop"]] else list(time_frame_slider.value),
+            "time_frame": ak.time_frame_window(time_frame_slider.value, map_time_frame["stop"]),
         }),
     )
     return (refresh_button,)
@@ -175,7 +175,7 @@ def _(activity_column, explorer_names, kit, map_controls, map_time_frame, mo, se
 
 @app.cell(hide_code=True)
 def _(activity_column, activity_column_dropdown, ak, event_log, explorer_names, explorer_notions, get_drawn, kit, map_controls, map_time_frame, mo, refresh_button, time_frame_slider):
-    _window = None if list(time_frame_slider.value) == [0, map_time_frame["stop"]] else list(time_frame_slider.value)
+    _window = ak.time_frame_window(time_frame_slider.value, map_time_frame["stop"])
     _current = {**kit.settings_from(map_controls.value, explorer_names), "activity_column": activity_column, "time_frame": _window}
     # the count follows the slider at once; the map changes only when Refresh is pressed
     _cases, _events = ak.cases_in_time_frame(event_log, _window)

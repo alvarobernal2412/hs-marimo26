@@ -91,3 +91,14 @@ def test_a_time_frame_without_a_complete_case_gives_an_empty_log():
 def test_cases_in_time_frame_counts_cases_and_events():
     assert ak.cases_in_time_frame(_three_cases(), [0, 4]) == (2, 4)
     assert ak.cases_in_time_frame(_three_cases(), [0, 5]) == (3, 6)
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [([0, 10], None), ((2, 5), [2, 5]), ([2.0, 50], [2, 10]), (None, None), ("x", None), (["a", 3], None), ([1], None)],
+)
+def test_time_frame_window_is_read_in_one_place(value, expected):
+    assert ak.time_frame_window(value, 10) == expected
