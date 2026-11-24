@@ -429,10 +429,31 @@ def activity_column_options(log: pd.DataFrame) -> list[str]:
     return options
 
 
-def to_lcm_log(log: pd.DataFrame, case_column: str = CASE_ID, activity_column: str = ACTIVITY) -> pd.DataFrame:
+def _events_in_time_frame(log: pd.DataFrame, window) -> pd.DataFrame:
+    """The events of the cases (by the case id) that lie completely inside `window`, a [from, to] in the units of `time_frame`. None
+    keeps everything."""
+    if window is None:
+        return log
+    frame = time_frame(log, CASE_ID, TIMESTAMP)
+    start = frame["start"] + pd.Timedelta(window[0], frame["unit"])
+    end = frame["start"] + pd.Timedelta(window[1], frame["unit"])
+    return tcu.filter_cases_within_window(log, CASE_ID, TIMESTAMP, start, end)
+
+
+def cases_in_time_frame(log: pd.DataFrame, window) -> tuple[int, int]:
+    """(cases, events) that lie completely inside `window`."""
+    events = _events_in_time_frame(log, window)
+    return int(events[CASE_ID].nunique()), len(events)
+
+
+def to_lcm_log(
+    log: pd.DataFrame, case_column: str = CASE_ID, activity_column: str = ACTIVITY, window=None
+) -> pd.DataFrame:
     """The case, activity and time columns under the names the map library of `bpm_kit` reads. `case_column` is the attribute that
     makes up a path and `activity_column` the one whose values are the nodes of the map: events without a value for either are left
-    out."""
+    out. `window` is a [from, to] in the units of `time_frame`: only the cases that lie completely inside it are kept (None keeps
+    everything)."""
+    log = _events_in_time_frame(log, window)
     events = pd.DataFrame(
         {
             "case:concept:name": log[case_column],

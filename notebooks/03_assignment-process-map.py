@@ -278,6 +278,18 @@ def _(adapter, ak, event_log, kit, mo):
         label="Activity column",
         allow_select_none=False,
     )
+    # "Time frame": only the cases that lie completely inside it are drawn. The slider is a control of its own, so choosing another
+    # activity column does not move it.
+    map_time_frame = ak.time_frame(event_log, ak.CASE_ID, ak.TIMESTAMP)
+    _stop = map_time_frame["stop"]
+    _window = None
+    if isinstance(_recorded.get("window"), (list, tuple)) and len(_recorded["window"]) == 2:
+        _window = [min(max(int(w), 0), _stop) for w in _recorded["window"]]
+        _window = None if _window == [0, _stop] else _window
+    time_frame_slider = mo.ui.range_slider(
+        start=0, stop=_stop, step=1, value=_window or [0, _stop], full_width=True, debounce=True,
+        label=f"Time frame in {'days' if map_time_frame['unit'] == 'D' else 'hours'} after {map_time_frame['start']}",
+    )
     # drawn: what the map shows (changed by Refresh). The explorer starts on the 5 most frequent activities (all 25 make a map of 342
     # nodes that takes ten seconds to draw and is slow to render in the browser) or as the analyst left it (including what each
     # path was). It does not depend on the activity column dropdown, so choosing another column changes nothing until Refresh is pressed.
@@ -287,14 +299,15 @@ def _(adapter, ak, event_log, kit, mo):
             **(kit.last_map_settings(adapter) or {"activities": sorted(event_log[_activity].value_counts().index[:5])}),
             "case_notion": _column if _column in explorer_notions.values() else ak.CASE_ID,
             "activity_column": _activity,
+            "time_frame": _window,  # None is the whole log
         }
     )
     get_drawn, set_drawn = mo.state(initial_settings)
-    return activity_column_dropdown, explorer_notions, get_drawn, initial_settings, set_drawn
+    return activity_column_dropdown, explorer_notions, get_drawn, initial_settings, map_time_frame, set_drawn, time_frame_slider
 
 
 @app.cell(hide_code=True)
-def _(activity_column_dropdown, ak, event_log, explorer_notions, initial_settings, kit, mo):
+def _(activity_column_dropdown, event_log, explorer_notions, initial_settings, kit, mo):
     # Choosing another activity column builds the activity picker (and the folds) again for that column; the map is not drawn again
     # until Refresh is pressed.
     activity_column = activity_column_dropdown.value
@@ -307,6 +320,7 @@ def _(activity_column_dropdown, ak, event_log, explorer_notions, initial_setting
                 "activities": sorted(event_log[activity_column].value_counts().index[:5]),
                 "case_notion": initial_settings["case_notion"],
                 "activity_column": activity_column,
+                "time_frame": initial_settings["time_frame"],
             }
         )
     map_controls = kit.map_controls(mo, explorer_names, draft_settings, explorer_notions)
@@ -314,21 +328,31 @@ def _(activity_column_dropdown, ak, event_log, explorer_notions, initial_setting
 
 
 @app.cell(hide_code=True)
-def _(activity_column, explorer_names, kit, map_controls, mo, set_drawn):
+def _(activity_column, explorer_names, kit, map_controls, map_time_frame, mo, set_drawn, time_frame_slider):
     refresh_button = mo.ui.button(
         label="Refresh visualization", kind="success",
-        on_click=lambda _: set_drawn({**kit.settings_from(map_controls.value, explorer_names), "activity_column": activity_column}),
+        on_click=lambda _: set_drawn({
+            **kit.settings_from(map_controls.value, explorer_names), "activity_column": activity_column,
+            "time_frame": None if list(time_frame_slider.value) == [0, map_time_frame["stop"]] else list(time_frame_slider.value),
+        }),
     )
     return (refresh_button,)
 
 
 @app.cell(hide_code=True)
-def _(activity_column, activity_column_dropdown, explorer_names, explorer_notions, get_drawn, kit, map_controls, mo, refresh_button):
-    _current = {**kit.settings_from(map_controls.value, explorer_names), "activity_column": activity_column}
+def _(activity_column, activity_column_dropdown, ak, event_log, explorer_names, explorer_notions, get_drawn, kit, map_controls, map_time_frame, mo, refresh_button, time_frame_slider):
+    _window = None if list(time_frame_slider.value) == [0, map_time_frame["stop"]] else list(time_frame_slider.value)
+    _current = {**kit.settings_from(map_controls.value, explorer_names), "activity_column": activity_column, "time_frame": _window}
+    # the count follows the slider at once; the map changes only when Refresh is pressed
+    _cases, _events = ak.cases_in_time_frame(event_log, _window)
     kit.controls_layout(
         mo, map_controls, mo.md(""), refresh_button,
         kit.refresh_status(mo, _current, get_drawn()), show_case_notion=len(explorer_notions) > 1,
         activity_column=activity_column_dropdown,
+        time_frame=mo.vstack([
+            time_frame_slider,
+            mo.md(f"**{_cases:,}** cases and **{_events:,}** events lie completely in this time frame."),
+        ]),
     )
     return
 
@@ -342,9 +366,14 @@ def _(ak, get_drawn, kit, event_log, mo, panel, record):
     mo.stop(_settings["activities"] == [], mo.callout(mo.md("Select at least one activity."), kind="warn"))
     path_column = _settings["case_notion"]  # "Group events by": the attribute whose values make up a path
     drawn_activity_column = _settings.get("activity_column", ak.ACTIVITY)  # a history from before this choice has none
+    drawn_time_frame = _settings.get("time_frame")  # None is the whole log
+    mo.stop(
+        ak.cases_in_time_frame(event_log, drawn_time_frame)[0] == 0,
+        mo.callout(mo.md("No case lies completely within the time frame. Widen it and press Refresh visualization."), kind="warn"),
+    )
     try:
         # every map you ask for is a recorded step: first the log with that attribute as the case, then the map of it
-        lcm_log = record(["lcm_log"], ak.to_lcm_log, event_log, path_column, drawn_activity_column)
+        lcm_log = record(["lcm_log"], ak.to_lcm_log, event_log, path_column, drawn_activity_column, drawn_time_frame)
         map_figure, map_meta = record(
             ["map_figure", "map_meta"], kit.draw_map,
             lcm_log, _settings["activities"], _settings["map_type"], _settings["allow_loops"],
@@ -355,7 +384,7 @@ def _(ak, get_drawn, kit, event_log, mo, panel, record):
     except ValueError as _error:
         _available = ", ".join(f"`{a}`" for a in sorted(lcm_log["concept:name"].unique()))
         mo.stop(True, mo.callout(mo.md(f"{_error} The activities that occur when events are grouped by `{path_column}` are: {_available}."), kind="danger"))
-    return drawn_activity_column, map_figure, map_meta, path_column
+    return drawn_activity_column, drawn_time_frame, map_figure, map_meta, path_column
 
 
 @app.cell(hide_code=True)
@@ -376,12 +405,17 @@ def _(adapter, arrangement, kit, map_arrangement, map_figure, panel, record, sta
 
 
 @app.cell(hide_code=True)
-def _(ak, arrangement, drawn_activity_column, kit, map_meta, mo, path_column, show_chart, shown_map, shown_map_state, state_of):
+def _(ak, arrangement, drawn_activity_column, drawn_time_frame, kit, map_meta, map_time_frame, mo, path_column, pd, show_chart, shown_map, shown_map_state, state_of):
     _chart = show_chart(mo.as_html(shown_map), artifact_id=shown_map_state, artifact_name="process_map")
     mo.vstack([
         mo.md(kit.describe_settings(map_meta["settings"])),
         mo.md(f"**Group events by:** `{path_column}`" if path_column != ak.CASE_ID else ""),
         mo.md(f"**Activity column:** `{drawn_activity_column}`" if drawn_activity_column != ak.ACTIVITY else ""),
+        mo.md(
+            "**Time frame:** " + " to ".join(
+                (map_time_frame["start"] + pd.Timedelta(w, map_time_frame["unit"])).strftime("%Y-%m-%d %H:%M") for w in drawn_time_frame
+            ) if drawn_time_frame else ""
+        ),
         mo.md(kit.describe_map(map_meta)),
         mo.callout(
             mo.md(f"No event of these has a value for the attribute that makes up a path, so not drawn: {', '.join(f'`{a}`' for a in map_meta['left_out'])}."),

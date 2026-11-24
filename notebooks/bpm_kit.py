@@ -487,14 +487,15 @@ SHOW_QUICK_SELECTION = os.environ.get("BPM_QUICK_SELECTION", "") == "1"
 
 def controls_layout(
     mo, controls, preset_buttons, refresh_button, status, show_case_notion: bool, show_quick_selection: bool | None = None,
-    activity_column=None,
+    activity_column=None, time_frame=None,
 ):
     """The explorer's layout. `activity_column` is a control of the notebook (the column that gives the activities), shown in the
-    first row after the case notion."""
+    first row after the case notion. `time_frame` is an element of the notebook (the time-frame slider), shown directly under the
+    first row."""
     show_presets = SHOW_QUICK_SELECTION if show_quick_selection is None else show_quick_selection
     first_row = [controls["map_type"]] + ([controls["case_notion"]] if show_case_notion else [])
     first_row += [] if activity_column is None else [activity_column]
-    first_row +=[controls["allow_loops"], controls["show_empty"]]
+    first_row += [controls["allow_loops"], controls["show_empty"]]
     folds = mo.vstack(
         [mo.hstack([slot["name"], slot["activities"]], justify="start", gap=1, widths=[1, 3]) for slot in controls["folds"]],
         gap=0.5,
@@ -502,6 +503,7 @@ def controls_layout(
     return mo.vstack(
         [
             mo.hstack(first_row, justify="start", gap=2, align="end", wrap=True),
+            *([] if time_frame is None else [time_frame]),
             *([mo.hstack([mo.md("Quick selection:"), preset_buttons], justify="start", gap=1, align="center")] if show_presets else []),
             controls["activities"],
             mo.accordion({"Activity folding": folds}),
