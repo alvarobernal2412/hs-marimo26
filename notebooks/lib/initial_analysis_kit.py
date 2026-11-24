@@ -412,13 +412,35 @@ def path_attribute_options(log: pd.DataFrame) -> list[str]:
     return options
 
 
-def to_lcm_log(log: pd.DataFrame, case_column: str = CASE_ID) -> pd.DataFrame:
+ACTIVITY_COLUMN_LIMIT = 200  # a column with more distinct values than this makes a map with too many nodes to read
+
+
+def activity_column_options(log: pd.DataFrame) -> list[str]:
+    """The columns that can be the activity of a map (its nodes): the activity first, then every other text column with
+    2 to `ACTIVITY_COLUMN_LIMIT` distinct values. The case id, the time and the folded data are not offered."""
+    options = [ACTIVITY]
+    for col in log.columns:
+        if col in (ACTIVITY, CASE_ID, TIMESTAMP, "folded_data"):
+            continue
+        if not (pd.api.types.is_string_dtype(log[col]) or pd.api.types.is_object_dtype(log[col])):
+            continue
+        if 2 <= log[col].nunique() <= ACTIVITY_COLUMN_LIMIT:
+            options.append(col)
+    return options
+
+
+def to_lcm_log(log: pd.DataFrame, case_column: str = CASE_ID, activity_column: str = ACTIVITY) -> pd.DataFrame:
     """The case, activity and time columns under the names the map library of `bpm_kit` reads. `case_column` is the attribute that
-    makes up a path: events without a value for it are left out."""
-    events = log[log[case_column].notna()]
-    return events[[case_column, ACTIVITY, TIMESTAMP]].rename(
-        columns={case_column: "case:concept:name", ACTIVITY: "concept:name", TIMESTAMP: "time:timestamp"}
+    makes up a path and `activity_column` the one whose values are the nodes of the map: events without a value for either are left
+    out."""
+    events = pd.DataFrame(
+        {
+            "case:concept:name": log[case_column],
+            "concept:name": log[activity_column],
+            "time:timestamp": log[TIMESTAMP],
+        }
     )
+    return events[events["case:concept:name"].notna() & events["concept:name"].notna()]
 
 
 # --- saving to the course server, one notebook among several ------------------------------------------------------------------------

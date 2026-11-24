@@ -90,67 +90,99 @@ def _(ak, mo, project_file):
     SEPSIS = "data/SepsisCases2020EventLog.xes"
 
     event_log = ak.normalise_log(ak.read_log(project_file(SEPSIS)))
-    # the case, activity and time columns under the names the map library reads; a path of the map is a case
-    lcm_log = ak.to_lcm_log(event_log)
     mo.md(f"**{len(event_log):,}** events of **{event_log[ak.CASE_ID].nunique():,}** cases loaded.")
-    return event_log, lcm_log
+    return (event_log,)
 
 
 @app.cell(hide_code=True)
 def _(ak, event_log, kit, mo):
-    explorer_names = sorted(event_log[ak.ACTIVITY].unique())
-    # draft: what the controls are built from; drawn: what the map shows (changed by Refresh). The explorer starts on the 5 most
-    # frequent activities, a map small enough to read at once.
-    _settings = kit.normalise_settings({"activities": sorted(event_log[ak.ACTIVITY].value_counts().index[:5])})
-    get_draft, set_draft = mo.state(_settings)
-    get_drawn, set_drawn = mo.state(_settings)
-    return explorer_names, get_draft, get_drawn, set_drawn
+    # "Group events by": the attributes whose values can make up a path; the case id is the normal one
+    explorer_notions = {("Case ID" if c == ak.CASE_ID else c): c for c in ak.path_attribute_options(event_log)}
+    # "Activity column": the column whose values are the nodes of the map
+    activity_column_dropdown = mo.ui.dropdown(
+        options=ak.activity_column_options(event_log), value=ak.ACTIVITY, label="Activity column", allow_select_none=False,
+    )
+    # drawn: what the map shows (changed by Refresh). The explorer starts on the 5 most frequent activities, a map small enough to
+    # read at once. It does not depend on the activity column dropdown, so choosing another column changes nothing until Refresh is pressed.
+    initial_settings = kit.normalise_settings(
+        {
+            "activities": sorted(event_log[ak.ACTIVITY].value_counts().index[:5]),
+            "case_notion": ak.CASE_ID,
+            "activity_column": ak.ACTIVITY,
+        }
+    )
+    get_drawn, set_drawn = mo.state(initial_settings)
+    return activity_column_dropdown, explorer_notions, get_drawn, initial_settings, set_drawn
 
 
 @app.cell(hide_code=True)
-def _(explorer_names, get_draft, kit, mo):
-    # a path is always a case here, so the "Each path is" control has one option and is not shown
-    map_controls = kit.map_controls(mo, explorer_names, get_draft(), {"A case": "application"})
-    return (map_controls,)
+def _(activity_column_dropdown, event_log, explorer_notions, initial_settings, kit, mo):
+    # Choosing another activity column builds the activity picker (and the folds) again for that column; the map is not drawn again
+    # until Refresh is pressed.
+    activity_column = activity_column_dropdown.value
+    explorer_names = sorted(event_log[activity_column].dropna().unique())
+    if activity_column == initial_settings["activity_column"]:
+        draft_settings = initial_settings
+    else:
+        draft_settings = kit.normalise_settings(
+            {
+                "activities": sorted(event_log[activity_column].value_counts().index[:5]),
+                "case_notion": initial_settings["case_notion"],
+                "activity_column": activity_column,
+            }
+        )
+    map_controls = kit.map_controls(mo, explorer_names, draft_settings, explorer_notions)
+    return activity_column, explorer_names, map_controls
 
 
 @app.cell(hide_code=True)
-def _(explorer_names, kit, map_controls, mo, set_drawn):
+def _(activity_column, explorer_names, kit, map_controls, mo, set_drawn):
     refresh_button = mo.ui.button(
         label="Refresh visualization", kind="success",
-        on_click=lambda _: set_drawn(kit.settings_from(map_controls.value, explorer_names)),
+        on_click=lambda _: set_drawn({**kit.settings_from(map_controls.value, explorer_names), "activity_column": activity_column}),
     )
     return (refresh_button,)
 
 
 @app.cell(hide_code=True)
-def _(explorer_names, get_drawn, kit, map_controls, mo, refresh_button):
-    _current = kit.settings_from(map_controls.value, explorer_names)
+def _(activity_column, activity_column_dropdown, explorer_names, explorer_notions, get_drawn, kit, map_controls, mo, refresh_button):
+    _current = {**kit.settings_from(map_controls.value, explorer_names), "activity_column": activity_column}
     kit.controls_layout(
         mo, map_controls, mo.md(""), refresh_button,
-        kit.refresh_status(mo, _current, get_drawn()), show_case_notion=False,
+        kit.refresh_status(mo, _current, get_drawn()), show_case_notion=len(explorer_notions) > 1,
+        activity_column=activity_column_dropdown,
     )
     return
 
 
 @app.cell(hide_code=True)
-def _(get_drawn, kit, lcm_log, mo):
+def _(ak, event_log, get_drawn, kit, mo):
     _settings = get_drawn()
     _problems = kit.fold_problems(_settings)
     mo.stop(bool(_problems), mo.callout(mo.md("  \n".join(_problems)), kind="danger"))
     mo.stop(_settings["activities"] == [], mo.callout(mo.md("Select at least one activity."), kind="warn"))
-    map_figure, map_meta = kit.draw_map(
-        lcm_log, _settings["activities"], _settings["map_type"], _settings["allow_loops"],
-        _settings["show_empty"], _settings["folds"], "application", 900,
-        room=(100, 140, 110),  # the rings of the loops reach above, below and left of the nodes: with less room they are cut off
-    )
-    return map_figure, map_meta
+    path_column = _settings["case_notion"]  # "Group events by": the attribute whose values make up a path
+    drawn_activity_column = _settings["activity_column"]
+    # the case, activity and time columns under the names the map library reads, for the drawn settings
+    lcm_log = ak.to_lcm_log(event_log, path_column, drawn_activity_column)
+    try:
+        map_figure, map_meta = kit.draw_map(
+            lcm_log, _settings["activities"], _settings["map_type"], _settings["allow_loops"],
+            _settings["show_empty"], _settings["folds"], "application", 900,  # the log's own case column is already the chosen one
+            room=(100, 140, 110),  # the rings of the loops reach above, below and left of the nodes: with less room they are cut off
+        )
+    except ValueError as _error:
+        _available = ", ".join(f"`{a}`" for a in sorted(lcm_log["concept:name"].unique()))
+        mo.stop(True, mo.callout(mo.md(f"{_error} The activities that occur when events are grouped by `{path_column}` are: {_available}."), kind="danger"))
+    return drawn_activity_column, map_figure, map_meta, path_column
 
 
 @app.cell(hide_code=True)
-def _(kit, map_figure, map_meta, mo):
+def _(ak, drawn_activity_column, kit, map_figure, map_meta, mo, path_column):
     mo.vstack([
         mo.md(kit.describe_settings(map_meta["settings"])),
+        mo.md(f"**Group events by:** `{path_column}`" if path_column != ak.CASE_ID else ""),
+        mo.md(f"**Activity column:** `{drawn_activity_column}`" if drawn_activity_column != ak.ACTIVITY else ""),
         mo.md(kit.describe_map(map_meta)),
         mo.as_html(map_figure),
     ])

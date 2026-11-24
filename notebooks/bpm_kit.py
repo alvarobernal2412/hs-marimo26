@@ -300,18 +300,21 @@ def normalise_settings(settings: dict | None) -> dict:
     return merged
 
 
-_services: dict = {}
+_last_service: dict = {}
 
 
 def _service(log: pd.DataFrame, case_notion: str):
-    """The map service for `log` under one case notion. Building it reads the whole log, so it is kept for the next map."""
-    key = (id(log), len(log), case_notion)
-    if key not in _services:
-        column = _CASE_COLUMN[case_notion]
-        events = log[log[column].notna()] if column != CASE_ID else log
-        events = events[[column, ACTIVITY, TIMESTAMP]].rename(columns={column: CASE_ID})
-        _services[key] = (lcm.get_service(events), set(events[ACTIVITY].unique()), int(events[CASE_ID].nunique()))
-    return _services[key]
+    """The map service for `log` under one case notion. Building it reads the whole log, so the last one is kept for the next map:
+    it is reused only for the very same log (not one that merely has the same length) and the same notion. Older ones are dropped."""
+    kept = _last_service.get("kept")
+    if kept is not None and kept[0] is log and kept[1] == case_notion:
+        return kept[2]
+    column = _CASE_COLUMN[case_notion]
+    events = log[log[column].notna()] if column != CASE_ID else log
+    events = events[[column, ACTIVITY, TIMESTAMP]].rename(columns={column: CASE_ID})
+    service = (lcm.get_service(events), set(events[ACTIVITY].unique()), int(events[CASE_ID].nunique()))
+    _last_service["kept"] = (log, case_notion, service)
+    return service
 
 
 def draw_map(log, activities, map_type, allow_loops, show_empty, folds, case_notion, height=620, room=(10, 10, 10)):
@@ -376,7 +379,7 @@ def describe_settings(settings: dict) -> str:
     folds = "; ".join(f"**{n}** = {', '.join(f'`{m}`' for m in ms)}" for n, ms in s["folds"].items()) or "none"
     return (
         f"**Abstraction:** {abstraction} · "
-        + (f"**Each path is:** {notion} · " if s["case_notion"] != "application" else "")
+        + (f"**Group events by:** {notion} · " if s["case_notion"] != "application" else "")
         + f"**Self-loops:** {'shown' if s['allow_loops'] else 'hidden'} · **Empty traces:** {'shown' if s['show_empty'] else 'hidden'}  \n"
         f"**Activities:** {activities}  \n**Folds:** {folds}"
     )
@@ -428,7 +431,7 @@ def map_controls(mo, names: list, settings: dict | None, case_notions: dict):
             "map_type": mo.ui.dropdown(
                 options=MAP_TYPES, value={v: k for k, v in MAP_TYPES.items()}[s["map_type"]], label="Abstraction"
             ),
-            "case_notion": mo.ui.dropdown(options=case_notions, value=notion_label, label="Each path is"),
+            "case_notion": mo.ui.dropdown(options=case_notions, value=notion_label, label="Group events by"),
             "allow_loops": mo.ui.switch(value=s["allow_loops"], label="Show self-loops"),
             "show_empty": mo.ui.switch(value=s["show_empty"], label="Show empty traces"),
             "folds": mo.ui.array(
@@ -483,11 +486,15 @@ SHOW_QUICK_SELECTION = os.environ.get("BPM_QUICK_SELECTION", "") == "1"
 
 
 def controls_layout(
-    mo, controls, preset_buttons, refresh_button, status, show_case_notion: bool, show_quick_selection: bool | None = None
+    mo, controls, preset_buttons, refresh_button, status, show_case_notion: bool, show_quick_selection: bool | None = None,
+    activity_column=None,
 ):
+    """The explorer's layout. `activity_column` is a control of the notebook (the column that gives the activities), shown in the
+    first row after the case notion."""
     show_presets = SHOW_QUICK_SELECTION if show_quick_selection is None else show_quick_selection
     first_row = [controls["map_type"]] + ([controls["case_notion"]] if show_case_notion else [])
-    first_row += [controls["allow_loops"], controls["show_empty"]]
+    first_row += [] if activity_column is None else [activity_column]
+    first_row +=[controls["allow_loops"], controls["show_empty"]]
     folds = mo.vstack(
         [mo.hstack([slot["name"], slot["activities"]], justify="start", gap=1, widths=[1, 3]) for slot in controls["folds"]],
         gap=0.5,

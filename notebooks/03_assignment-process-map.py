@@ -265,49 +265,70 @@ def _(HERE, ak, du, mo, project_file, record, show_table, state_of):
 
 
 @app.cell(hide_code=True)
-def _(ak, kit, event_log):
-    # The activities do not depend on what a path is, so choosing another attribute changes nothing until Refresh is pressed.
-    explorer_names = sorted(event_log[ak.ACTIVITY].unique())
-    # "Each path is": the attributes whose values can make up a path; the case id is the normal one
+def _(adapter, ak, event_log, kit, mo):
+    # "Group events by": the attributes whose values can make up a path; the case id is the normal one
     explorer_notions = {("Case ID" if c == ak.CASE_ID else c): c for c in ak.path_attribute_options(event_log)}
-    return explorer_names, explorer_notions
-
-
-@app.cell(hide_code=True)
-def _(adapter, ak, event_log, explorer_names, explorer_notions, kit, mo):
-    # draft: what the controls are built from; drawn: what the map shows (changed by Refresh). The explorer starts on the 5 most frequent
-    # activities (all 25 make a map of 342 nodes that takes ten seconds to draw and is slow to render in the browser) or
-    # as the analyst left it (including what each path was).
-    _column = (ak.params_at(adapter, None, "to_lcm_log") or {}).get("case_column")
-    _settings = kit.normalise_settings(
-        {**(kit.last_map_settings(adapter) or {"activities": sorted(event_log[ak.ACTIVITY].value_counts().index[:5])}), "case_notion": _column if _column in explorer_notions.values() else ak.CASE_ID}
+    # "Activity column": the column whose values are the nodes of the map. It starts as the analyst left it.
+    _recorded = ak.params_at(adapter, None, "to_lcm_log") or {}
+    _options = ak.activity_column_options(event_log)
+    _activity = _recorded.get("activity_column") if _recorded.get("activity_column") in _options else ak.ACTIVITY
+    activity_column_dropdown = mo.ui.dropdown(
+        options=_options,
+        value=_activity,
+        label="Activity column",
+        allow_select_none=False,
     )
-    get_draft, set_draft = mo.state(_settings)
-    get_drawn, set_drawn = mo.state(_settings)
-    return get_draft, get_drawn, set_draft, set_drawn
+    # drawn: what the map shows (changed by Refresh). The explorer starts on the 5 most frequent activities (all 25 make a map of 342
+    # nodes that takes ten seconds to draw and is slow to render in the browser) or as the analyst left it (including what each
+    # path was). It does not depend on the activity column dropdown, so choosing another column changes nothing until Refresh is pressed.
+    _column = _recorded.get("case_column")
+    initial_settings = kit.normalise_settings(
+        {
+            **(kit.last_map_settings(adapter) or {"activities": sorted(event_log[_activity].value_counts().index[:5])}),
+            "case_notion": _column if _column in explorer_notions.values() else ak.CASE_ID,
+            "activity_column": _activity,
+        }
+    )
+    get_drawn, set_drawn = mo.state(initial_settings)
+    return activity_column_dropdown, explorer_notions, get_drawn, initial_settings, set_drawn
 
 
 @app.cell(hide_code=True)
-def _(explorer_names, explorer_notions, get_draft, kit, mo):
-    map_controls = kit.map_controls(mo, explorer_names, get_draft() or {"activities": []}, explorer_notions)
-    return (map_controls,)
+def _(activity_column_dropdown, ak, event_log, explorer_notions, initial_settings, kit, mo):
+    # Choosing another activity column builds the activity picker (and the folds) again for that column; the map is not drawn again
+    # until Refresh is pressed.
+    activity_column = activity_column_dropdown.value
+    explorer_names = sorted(event_log[activity_column].dropna().unique())
+    if activity_column == initial_settings["activity_column"]:
+        draft_settings = initial_settings
+    else:
+        draft_settings = kit.normalise_settings(
+            {
+                "activities": sorted(event_log[activity_column].value_counts().index[:5]),
+                "case_notion": initial_settings["case_notion"],
+                "activity_column": activity_column,
+            }
+        )
+    map_controls = kit.map_controls(mo, explorer_names, draft_settings, explorer_notions)
+    return activity_column, explorer_names, map_controls
 
 
 @app.cell(hide_code=True)
-def _(explorer_names, kit, map_controls, mo, set_drawn):
+def _(activity_column, explorer_names, kit, map_controls, mo, set_drawn):
     refresh_button = mo.ui.button(
         label="Refresh visualization", kind="success",
-        on_click=lambda _: set_drawn(kit.settings_from(map_controls.value, explorer_names)),
+        on_click=lambda _: set_drawn({**kit.settings_from(map_controls.value, explorer_names), "activity_column": activity_column}),
     )
     return (refresh_button,)
 
 
 @app.cell(hide_code=True)
-def _(explorer_names, explorer_notions, get_drawn, kit, map_controls, mo, refresh_button):
-    _current = kit.settings_from(map_controls.value, explorer_names)
+def _(activity_column, activity_column_dropdown, explorer_names, explorer_notions, get_drawn, kit, map_controls, mo, refresh_button):
+    _current = {**kit.settings_from(map_controls.value, explorer_names), "activity_column": activity_column}
     kit.controls_layout(
         mo, map_controls, mo.md(""), refresh_button,
         kit.refresh_status(mo, _current, get_drawn()), show_case_notion=len(explorer_notions) > 1,
+        activity_column=activity_column_dropdown,
     )
     return
 
@@ -319,10 +340,11 @@ def _(ak, get_drawn, kit, event_log, mo, panel, record):
     _problems = kit.fold_problems(_settings)
     mo.stop(bool(_problems), mo.callout(mo.md("  \n".join(_problems)), kind="danger"))
     mo.stop(_settings["activities"] == [], mo.callout(mo.md("Select at least one activity."), kind="warn"))
-    path_column = _settings["case_notion"]  # "Each path is": the attribute whose values make up a path
+    path_column = _settings["case_notion"]  # "Group events by": the attribute whose values make up a path
+    drawn_activity_column = _settings.get("activity_column", ak.ACTIVITY)  # a history from before this choice has none
     try:
         # every map you ask for is a recorded step: first the log with that attribute as the case, then the map of it
-        lcm_log = record(["lcm_log"], ak.to_lcm_log, event_log, path_column)
+        lcm_log = record(["lcm_log"], ak.to_lcm_log, event_log, path_column, drawn_activity_column)
         map_figure, map_meta = record(
             ["map_figure", "map_meta"], kit.draw_map,
             lcm_log, _settings["activities"], _settings["map_type"], _settings["allow_loops"],
@@ -332,8 +354,8 @@ def _(ak, get_drawn, kit, event_log, mo, panel, record):
         panel.refresh()  # so that the side panel knows the new step before the first annotation is written on it
     except ValueError as _error:
         _available = ", ".join(f"`{a}`" for a in sorted(lcm_log["concept:name"].unique()))
-        mo.stop(True, mo.callout(mo.md(f"{_error} The activities that occur when each path is `{path_column}` are: {_available}."), kind="danger"))
-    return map_figure, map_meta, path_column
+        mo.stop(True, mo.callout(mo.md(f"{_error} The activities that occur when events are grouped by `{path_column}` are: {_available}."), kind="danger"))
+    return drawn_activity_column, map_figure, map_meta, path_column
 
 
 @app.cell(hide_code=True)
@@ -354,11 +376,12 @@ def _(adapter, arrangement, kit, map_arrangement, map_figure, panel, record, sta
 
 
 @app.cell(hide_code=True)
-def _(ak, arrangement, kit, map_meta, mo, path_column, show_chart, shown_map, shown_map_state, state_of):
+def _(ak, arrangement, drawn_activity_column, kit, map_meta, mo, path_column, show_chart, shown_map, shown_map_state, state_of):
     _chart = show_chart(mo.as_html(shown_map), artifact_id=shown_map_state, artifact_name="process_map")
     mo.vstack([
         mo.md(kit.describe_settings(map_meta["settings"])),
-        mo.md(f"**Each path is:** `{path_column}`" if path_column != ak.CASE_ID else ""),
+        mo.md(f"**Group events by:** `{path_column}`" if path_column != ak.CASE_ID else ""),
+        mo.md(f"**Activity column:** `{drawn_activity_column}`" if drawn_activity_column != ak.ACTIVITY else ""),
         mo.md(kit.describe_map(map_meta)),
         mo.callout(
             mo.md(f"No event of these has a value for the attribute that makes up a path, so not drawn: {', '.join(f'`{a}`' for a in map_meta['left_out'])}."),
