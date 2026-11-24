@@ -519,6 +519,18 @@ def to_lcm_log(
     return events[events["case:concept:name"].notna() & events["concept:name"].notna()]
 
 
+def lcm_log_arguments(case_column: str, activity_column: str = ACTIVITY, window=None) -> list:
+    """The arguments of `to_lcm_log` after the log, for a recorded step. Only the arguments that differ from their defaults are
+    included (a trailing one at its default is left out), so that the recorded step of an earlier version of the notebook stays equal
+    to the step recorded now, and a history that is opened again does not record it (and the map) a second time."""
+    arguments = [case_column, activity_column, window]
+    if window is None:
+        arguments.pop()
+        if activity_column == ACTIVITY:
+            arguments.pop()
+    return arguments
+
+
 # --- saving to the course server, one notebook among several ------------------------------------------------------------------------
 
 

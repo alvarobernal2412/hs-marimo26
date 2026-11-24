@@ -386,14 +386,7 @@ def _(ak, get_drawn, kit, event_log, mo, panel, record):
     )
     try:
         # every map you ask for is a recorded step: first the log with that attribute as the case, then the map of it
-        # Only the arguments that differ from their defaults are passed, so that the recorded step of an earlier version of this
-        # notebook stays equal to the step recorded now, and a history that is opened again does not record it (and the map) a second time.
-        _args = [path_column, drawn_activity_column, drawn_time_frame]
-        if drawn_time_frame is None:
-            _args.pop()
-            if drawn_activity_column == ak.ACTIVITY:
-                _args.pop()
-        lcm_log = record(["lcm_log"], ak.to_lcm_log, event_log, *_args)
+        lcm_log = record(["lcm_log"], ak.to_lcm_log, event_log, *ak.lcm_log_arguments(path_column, drawn_activity_column, drawn_time_frame))
         map_figure, map_meta = record(
             ["map_figure", "map_meta"], kit.draw_map,
             lcm_log, _settings["activities"], _settings["map_type"], _settings["allow_loops"],

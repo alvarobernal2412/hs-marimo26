@@ -102,3 +102,23 @@ import pytest  # noqa: E402
 )
 def test_time_frame_window_is_read_in_one_place(value, expected):
     assert ak.time_frame_window(value, 10) == expected
+
+
+@pytest.mark.parametrize(
+    "arguments, expected",
+    [
+        (("c",), ["c"]),
+        (("c", "activity_extended"), ["c", "activity_extended"]),
+        (("c", ak.ACTIVITY, [0, 5]), ["c", ak.ACTIVITY, [0, 5]]),
+        (("c", "x", [0, 5]), ["c", "x", [0, 5]]),
+    ],
+)
+def test_lcm_log_arguments_leave_out_trailing_defaults(arguments, expected):
+    assert ak.lcm_log_arguments(*arguments) == expected
+
+
+def test_lcm_log_arguments_give_the_same_log_as_the_direct_call():
+    log = _log(40)
+    for arguments in [(ak.CASE_ID,), (ak.CASE_ID, "lifecycle_transition"), (ak.CASE_ID, ak.ACTIVITY, [0, 5])]:
+        direct = ak.to_lcm_log(log, *arguments)
+        assert ak.to_lcm_log(log, *ak.lcm_log_arguments(*arguments)).equals(direct)
