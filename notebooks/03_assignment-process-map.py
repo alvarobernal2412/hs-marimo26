@@ -406,7 +406,8 @@ def _(ak, get_drawn, kit, event_log, mo, panel, record):
         panel.refresh()  # so that the side panel knows the new step before the first annotation is written on it
     except ValueError as _error:
         _available = ", ".join(f"`{a}`" for a in sorted(lcm_log["concept:name"].unique()))
-        mo.stop(True, mo.callout(mo.md(f"{_error} The activities that occur when events are grouped by `{path_column}` are: {_available}."), kind="danger"))
+        _occur = f" The activities that occur when events are grouped by `{path_column}` are: {_available}." if _available else ""
+        mo.stop(True, mo.callout(mo.md(f"{_error}{_occur}"), kind="danger"))
     return drawn_activity_column, drawn_time_frame, map_figure, map_meta, path_column
 
 

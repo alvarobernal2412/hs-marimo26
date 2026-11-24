@@ -17,6 +17,7 @@ import signal
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -490,7 +491,7 @@ def time_frame_window(value, stop: int) -> list[int] | None:
     try:
         low, high = value
         window = [min(max(int(low), 0), stop), min(max(int(high), 0), stop)]
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):  # OverflowError: an infinite recorded value
         return None
     return None if window == [0, stop] else window
 
@@ -681,10 +682,19 @@ def server_pid() -> int:
     return os.getpid()
 
 
-def stop_app(delay: float = 1.0) -> None:
+def stop_app(delay: float = 1.0, grace: float = 3.0) -> None:
     """Ends the marimo server (and with it every open notebook) after `delay` seconds, so that the click that asked for it still
-    gets its answer."""
-    threading.Timer(delay, lambda: os.kill(server_pid(), signal.SIGTERM)).start()
+    gets its answer. When the server is this very process, it is ended `grace` seconds after the request to shut down if it has not
+    ended by then: on macOS SIGTERM asks the server to shut down, and it may wait for the open page (on Windows the kill ends it)."""
+
+    def stop() -> None:
+        pid = server_pid()
+        os.kill(pid, signal.SIGTERM)
+        if pid == os.getpid():
+            time.sleep(grace)
+            os._exit(0)
+
+    threading.Timer(delay, stop).start()
 
 
 def app_bar(mo, folder, stop_button):

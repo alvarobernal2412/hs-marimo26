@@ -1,6 +1,7 @@
 import signal
 import sys
 import threading
+import time
 import types
 from pathlib import Path
 
@@ -28,10 +29,22 @@ def test_a_missing_or_broken_version_file_is_a_development_copy(tmp_path):
 
 def test_stop_app_ends_the_server_after_the_delay(monkeypatch):
     calls, done = [], threading.Event()
+    monkeypatch.setattr(ak, "server_pid", lambda: 4242)
     monkeypatch.setattr(ak.os, "kill", lambda pid, sig: (calls.append((pid, sig)), done.set()))
-    ak.stop_app(delay=0)
+    monkeypatch.setattr(ak.os, "_exit", lambda code: calls.append(("exit", code)))
+    ak.stop_app(delay=0, grace=0)
     assert done.wait(5)
-    assert calls == [(ak.server_pid(), signal.SIGTERM)]
+    time.sleep(0.2)
+    assert calls == [(4242, signal.SIGTERM)]  # another process: no exit of this one
+
+
+def test_stop_app_ends_this_process_when_it_is_the_server(monkeypatch):
+    calls, done = [], threading.Event()
+    monkeypatch.setattr(ak.os, "kill", lambda pid, sig: calls.append((pid, sig)))
+    monkeypatch.setattr(ak.os, "_exit", lambda code: (calls.append(("exit", code)), done.set()))
+    ak.stop_app(delay=0, grace=0)
+    assert done.wait(5)
+    assert calls == [(ak.os.getpid(), signal.SIGTERM), ("exit", 0)]
 
 
 def test_server_pid_in_an_app_host_is_the_parent(monkeypatch):

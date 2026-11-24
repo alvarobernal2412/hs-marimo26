@@ -99,7 +99,7 @@ def _():
 
 @app.cell(hide_code=True)
 def _(HERE, ak, mo):
-    # The version of the notebooks and the button that stops the app, on every page, before anything else (also before a key is entered)
+    # The version of the notebooks and the button that stops the app, on every page, before anything else
     stop_button = mo.ui.run_button(label="Stop the app")
     ak.app_bar(mo, HERE, stop_button)
     return (stop_button,)

@@ -98,7 +98,7 @@ import pytest  # noqa: E402
 
 @pytest.mark.parametrize(
     "value, expected",
-    [([0, 10], None), ((2, 5), [2, 5]), ([2.0, 50], [2, 10]), (None, None), ("x", None), (["a", 3], None), ([1], None)],
+    [([0, 10], None), ((2, 5), [2, 5]), ([2.0, 50], [2, 10]), (None, None), ("x", None), (["a", 3], None), ([1], None), ([float("inf"), 3], None)],
 )
 def test_time_frame_window_is_read_in_one_place(value, expected):
     assert ak.time_frame_window(value, 10) == expected

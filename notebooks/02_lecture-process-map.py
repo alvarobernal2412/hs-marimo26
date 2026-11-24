@@ -87,7 +87,7 @@ def _():
 
 @app.cell(hide_code=True)
 def _(HERE, ak, mo):
-    # The version of the notebooks and the button that stops the app, on every page, before anything else (also before a key is entered)
+    # The version of the notebooks and the button that stops the app, on every page, before anything else
     stop_button = mo.ui.run_button(label="Stop the app")
     ak.app_bar(mo, HERE, stop_button)
     return (stop_button,)
@@ -224,7 +224,8 @@ def _(ak, event_log, get_drawn, kit, mo):
         )
     except ValueError as _error:
         _available = ", ".join(f"`{a}`" for a in sorted(lcm_log["concept:name"].unique()))
-        mo.stop(True, mo.callout(mo.md(f"{_error} The activities that occur when events are grouped by `{path_column}` are: {_available}."), kind="danger"))
+        _occur = f" The activities that occur when events are grouped by `{path_column}` are: {_available}." if _available else ""
+        mo.stop(True, mo.callout(mo.md(f"{_error}{_occur}"), kind="danger"))
     return drawn_activity_column, drawn_time_frame, map_figure, map_meta, path_column
 
 
