@@ -363,20 +363,31 @@ def _(activity_column, ak, explorer_names, kit, map_controls, map_time_frame, mo
 
 
 @app.cell(hide_code=True)
-def _(activity_column, activity_column_dropdown, ak, event_log, explorer_names, explorer_notions, get_drawn, kit, map_controls, map_time_frame, mo, refresh_button, time_frame_slider):
+def _(ak, event_log, map_time_frame, mo, time_frame_slider):
+    # The time frame is a section of its own, before the settings of the map: it limits the log that every map is drawn from.
+    # The count follows the slider at once; the map changes only when Refresh is pressed.
+    _cases, _events = ak.cases_in_time_frame(event_log, ak.time_frame_window(time_frame_slider.value, map_time_frame["stop"]))
+    mo.vstack([
+        mo.md("## Time frame"),
+        mo.md("Only the cases that lie completely in the time frame are drawn. A shorter time frame makes a smaller map."),
+        time_frame_slider,
+        mo.md(f"**{_cases:,}** cases and **{_events:,}** events lie completely in this time frame."),
+    ])
+    return
+
+
+@app.cell(hide_code=True)
+def _(activity_column, activity_column_dropdown, ak, explorer_names, explorer_notions, get_drawn, kit, map_controls, map_time_frame, mo, refresh_button, time_frame_slider):
     _window = ak.time_frame_window(time_frame_slider.value, map_time_frame["stop"])
     _current = {**kit.settings_from(map_controls.value, explorer_names), "activity_column": activity_column, "time_frame": _window}
-    # the count follows the slider at once; the map changes only when Refresh is pressed
-    _cases, _events = ak.cases_in_time_frame(event_log, _window)
-    kit.controls_layout(
-        mo, map_controls, mo.md(""), refresh_button,
-        kit.refresh_status(mo, _current, get_drawn()), show_case_notion=len(explorer_notions) > 1,
-        activity_column=activity_column_dropdown,
-        time_frame=mo.vstack([
-            time_frame_slider,
-            mo.md(f"**{_cases:,}** cases and **{_events:,}** events lie completely in this time frame."),
-        ]),
-    )
+    mo.vstack([
+        mo.md("## Map settings"),
+        kit.controls_layout(
+            mo, map_controls, mo.md(""), refresh_button,
+            kit.refresh_status(mo, _current, get_drawn()), show_case_notion=len(explorer_notions) > 1,
+            activity_column=activity_column_dropdown,
+        ),
+    ])
     return
 
 
