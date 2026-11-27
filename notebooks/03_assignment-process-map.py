@@ -3,13 +3,13 @@
 # dependencies = [
 #     "marimo>=0.25.2",
 #     "pmprov[duckdb,parquet,graph]>=0.10.0",
-#     "marimo-pmprov[pdf]>=0.14.1",
+#     "marimo-pmprov[pdf]>=0.17.0",
 #     "pandas>=3.1.0",
 #     "pyarrow>=15",
 #     "altair>=5.5",
 #     "vegafusion>=2.0",
 #     "pytz",
-#     "linear-continuous-process-mapper>=0.1.0",
+#     "linear-continuous-process-mapper>=0.2.0",
 #     "plotly>=7.1.0",
 #     "kaleido>=1.0.0",
 #     "networkx>=3.7",
@@ -261,7 +261,7 @@ def _(adapter, ak, rt):
 
 
 @app.cell(hide_code=True)
-def _(HERE, ak, du, mo, project_file, record, show_table, state_of):
+def _(HERE, ak, mo, project_file, record):
     # The log is not public and not part of the package: the launcher downloads it with the course code. Without it, say so.
     mo.stop(ak.log_is_missing(HERE), mo.callout(mo.md(ak.MISSING_LOG), kind="warn"))
     # Load the event log; the step records the name of the file, not a folder of somebody's computer
@@ -269,19 +269,30 @@ def _(HERE, ak, du, mo, project_file, record, show_table, state_of):
         return ak.load_event_log(project_file(name))
 
     event_log = record(["event_log"], load_event_log, ak.DHANA)
-    # This notebook does not share data with the initial analysis: it reads the log again. The table is here (folded, the map is what
-    # this notebook is about) so that the log can be looked at without opening the other notebook.
-    mo.vstack([
-        mo.md(f"**{len(event_log):,}** events loaded."),
-        mo.accordion({
-            "Event log": show_table(du.table(event_log, page_size=5), artifact_id=state_of("event_log"), artifact_name="event_log"),
-        }),
-    ])
+    mo.md(f"**{len(event_log):,}** events of **{event_log[ak.CASE_ID].nunique():,}** cases loaded.")
     return (event_log,)
 
 
 @app.cell(hide_code=True)
+def _(ak, du, event_log, mo, show_table, state_of):
+    # This notebook does not share data with the initial analysis: it reads the log again. The table is shown (not folded away): it
+    # is where the filter of the map is set. Its column filters are the filter
+    # of the map: Refresh visualization takes them (`ak.table_filters`). A filter in the browser runs no cell, so the table is watched
+    # (`ak.watch_filters`): until it is filtered in this session, Refresh keeps the filter the map was last drawn with.
+    event_table = ak.watch_filters(du.table(event_log, page_size=5))
+    mo.vstack([
+        mo.md("## Event log"),
+        show_table(event_table, artifact_id=state_of("event_log"), artifact_name="event_log"),
+        mo.md("Filter the table with the menu of a column; the map uses the filter when you press Refresh visualization."),
+    ])
+    return (event_table,)
+
+
+@app.cell(hide_code=True)
 def _(adapter, ak, event_log, kit, mo):
+    # The controls are built from the whole log, not from what the filter keeps: a change of the filter does not make them again
+    # (and lose what the analyst set). The map and the counts are drawn from the filtered log; an activity that the filter left out
+    # is named under the map.
     # "Group events by": the attributes whose values can make up a path; the case id is the normal one
     explorer_notions = {("Case ID" if c == ak.CASE_ID else c): c for c in ak.path_attribute_options(event_log)}
     # "Activity column": the column whose values are the nodes of the map. It starts as the analyst left it.
@@ -313,17 +324,26 @@ def _(adapter, ak, event_log, kit, mo):
             "case_notion": _column if _column in explorer_notions.values() else ak.CASE_ID,
             "activity_column": _activity,
             "time_frame": _window,  # None is the whole log
+            "filter": ak.last_filter(adapter),  # the filter of the map the analyst left ([] for none)
         }
     )
     get_drawn, set_drawn = mo.state(initial_settings)
+    # The last filter that was recorded, so the same filter is not recorded again at every Refresh (`ak.record_filter`)
+    filter_memo = {}
+    # "Clear filter": draws the map from the whole log. Shown while a recorded filter is kept that the table does not show.
+    clear_filter_button = mo.ui.button(label="Clear filter", on_click=lambda _: set_drawn(lambda d: {**d, "filter": []}))
     # The controls that do not depend on the activity column (see `kit.KEPT_CONTROLS`), as the analyst last set them. A plain dict, not
     # a state: it is filled by the cell below and read by the cell that builds the controls, which must not run again when it changes.
+    # (it also keeps the selected activities and the fold rows, for as long as the activity column is the same one).
     kept_controls = {}
-    return activity_column_dropdown, explorer_notions, get_drawn, initial_settings, kept_controls, map_time_frame, set_drawn, time_frame_slider
+    # "Add fold" raises a counter; the cell that builds the controls reads it and makes the controls again with one more fold row.
+    get_fold_adds, set_fold_adds = mo.state(0)
+    add_fold_button = mo.ui.button(label="Add fold", on_click=lambda _: set_fold_adds(lambda n: n + 1))
+    return activity_column_dropdown, add_fold_button, clear_filter_button, explorer_notions, filter_memo, get_drawn, get_fold_adds, initial_settings, kept_controls, map_time_frame, set_drawn, time_frame_slider
 
 
 @app.cell(hide_code=True)
-def _(activity_column_dropdown, event_log, explorer_notions, initial_settings, kept_controls, kit, mo):
+def _(activity_column_dropdown, event_log, explorer_notions, get_fold_adds, initial_settings, kept_controls, kit, mo):
     # Choosing another activity column builds the activity picker (and the folds) again for that column; the map is not drawn again
     # until Refresh is pressed. The other controls keep what the analyst set (`kept_controls`, empty the first time this runs).
     activity_column = activity_column_dropdown.value
@@ -339,34 +359,54 @@ def _(activity_column_dropdown, event_log, explorer_notions, initial_settings, k
                 "time_frame": initial_settings["time_frame"],
             }
         )
-    map_controls = kit.map_controls(mo, explorer_names, kit.normalise_settings({**draft_settings, **kept_controls}), explorer_notions)
+    # The folds are optional: a row for each fold of the settings (a recorded history can have some), and one more for every click on
+    # "Add fold". What was typed in the rows and the selected activities stay while the column stays.
+    map_controls = kit.build_map_controls(mo, explorer_names, draft_settings, explorer_notions, kept_controls, activity_column, get_fold_adds())
     return activity_column, explorer_names, map_controls
 
 
 @app.cell(hide_code=True)
-def _(kept_controls, kit, map_controls):
-    # Runs whenever a control changes: remembers the controls that survive a change of the activity column. Shows nothing.
+def _(activity_column, kept_controls, kit, map_controls):
+    # Runs whenever a control changes: remembers the controls that survive a change of the activity column, and the activities and
+    # folds that survive adding a fold row. Shows nothing.
     kept_controls.update(kit.kept_controls_of(map_controls.value))
+    kept_controls.update(kit.kept_column_controls_of(map_controls.value, activity_column))
     return
 
 
 @app.cell(hide_code=True)
-def _(activity_column, ak, explorer_names, kit, map_controls, map_time_frame, mo, set_drawn, time_frame_slider):
+def _(activity_column, ak, event_table, explorer_names, get_drawn, kit, map_controls, map_time_frame, mo, set_drawn, time_frame_slider):
+    # The filter is the table's, once the student has filtered the table in this session; until then the map keeps its filter (a
+    # recorded one: the table cannot show it again after a reload).
     refresh_button = mo.ui.button(
         label="Refresh visualization", kind="success",
         on_click=lambda _: set_drawn({
             **kit.settings_from(map_controls.value, explorer_names), "activity_column": activity_column,
             "time_frame": ak.time_frame_window(time_frame_slider.value, map_time_frame["stop"]),
+            "filter": ak.table_filters(event_table) if ak.table_was_filtered(event_table) else get_drawn().get("filter", []),
         }),
     )
     return (refresh_button,)
 
 
 @app.cell(hide_code=True)
-def _(ak, event_log, map_time_frame, mo, time_frame_slider):
+def _(adapter, ak, event_log, filter_memo, get_drawn, map_time_frame, record):
+    # The log the map is drawn from: what the filter of the drawn settings keeps. A filter is a recorded step (`filter_log`), so that
+    # an annotation written after it is about the filtered log, and a notebook that is opened again draws its map with it. No filter
+    # is no step, so histories without a filter replay as they were.
+    drawn_filter = get_drawn().get("filter") or []
+    map_log, _ = ak.record_filter(record, adapter, event_log, drawn_filter, filter_memo)
+    # Where the time frame counts from: the start of the whole log, whose slider it is, also when the log is filtered. None is the
+    # log's own start, so a map of the whole log records its step as before.
+    map_origin = ak.window_origin(map_time_frame) if map_log is not event_log else None
+    return drawn_filter, map_log, map_origin
+
+
+@app.cell(hide_code=True)
+def _(ak, map_log, map_origin, map_time_frame, mo, time_frame_slider):
     # The time frame is a section of its own, before the settings of the map: it limits the log that every map is drawn from.
-    # The count follows the slider at once; the map changes only when Refresh is pressed.
-    _cases, _events = ak.cases_in_time_frame(event_log, ak.time_frame_window(time_frame_slider.value, map_time_frame["stop"]))
+    # The count follows the slider at once (and counts what the filter keeps); the map changes only when Refresh is pressed.
+    _cases, _events = ak.cases_in_time_frame(map_log, ak.time_frame_window(time_frame_slider.value, map_time_frame["stop"]), map_origin)
     mo.vstack([
         mo.md("## Time frame"),
         mo.md("Only the cases that lie completely in the time frame are drawn. A shorter time frame makes a smaller map."),
@@ -377,22 +417,26 @@ def _(ak, event_log, map_time_frame, mo, time_frame_slider):
 
 
 @app.cell(hide_code=True)
-def _(activity_column, activity_column_dropdown, ak, explorer_names, explorer_notions, get_drawn, kit, map_controls, map_time_frame, mo, refresh_button, time_frame_slider):
+def _(activity_column, activity_column_dropdown, add_fold_button, ak, explorer_names, explorer_notions, get_drawn, kit, map_controls, map_time_frame, mo, refresh_button, time_frame_slider):
     _window = ak.time_frame_window(time_frame_slider.value, map_time_frame["stop"])
-    _current = {**kit.settings_from(map_controls.value, explorer_names), "activity_column": activity_column, "time_frame": _window}
+    # (the table's filter triggers nothing, so the status cannot see it: the line under the table says so)
+    _current = {
+        **kit.settings_from(map_controls.value, explorer_names), "activity_column": activity_column, "time_frame": _window,
+        "filter": get_drawn().get("filter", []),
+    }
     mo.vstack([
         mo.md("## Map settings"),
         kit.controls_layout(
             mo, map_controls, mo.md(""), refresh_button,
             kit.refresh_status(mo, _current, get_drawn()), show_case_notion=len(explorer_notions) > 1,
-            activity_column=activity_column_dropdown,
+            activity_column=activity_column_dropdown, add_fold=add_fold_button,
         ),
     ])
     return
 
 
 @app.cell(hide_code=True)
-def _(ak, get_drawn, kit, event_log, mo, panel, record):
+def _(ak, event_log, get_drawn, kit, map_log, map_origin, mo, panel, record):
     _settings = get_drawn()
     mo.stop(_settings is None, mo.md("*Choose the settings, then press Refresh visualization.*"))
     _problems = kit.fold_problems(_settings)
@@ -401,13 +445,18 @@ def _(ak, get_drawn, kit, event_log, mo, panel, record):
     path_column = _settings["case_notion"]  # "Group events by": the attribute whose values make up a path
     drawn_activity_column = _settings.get("activity_column", ak.ACTIVITY)  # a history from before this choice has none
     drawn_time_frame = _settings.get("time_frame")  # None is the whole log
+    # the map is drawn from what the filter keeps: it must still have the columns that make up the paths and the nodes
+    _problem = ak.filter_problem(event_log, map_log, needed=[path_column, drawn_activity_column])
+    mo.stop(_problem is not None, mo.callout(mo.md(_problem or ""), kind="warn"))
     mo.stop(
-        ak.cases_in_time_frame(event_log, drawn_time_frame)[0] == 0,
+        ak.cases_in_time_frame(map_log, drawn_time_frame, map_origin)[0] == 0,
         mo.callout(mo.md("No case lies completely within the time frame. Widen it and press Refresh visualization."), kind="warn"),
     )
     try:
         # every map you ask for is a recorded step: first the log with that attribute as the case, then the map of it
-        lcm_log = record(["lcm_log"], ak.to_lcm_log, event_log, *ak.lcm_log_arguments(path_column, drawn_activity_column, drawn_time_frame))
+        lcm_log = record(
+            ["lcm_log"], ak.to_lcm_log, map_log, *ak.lcm_log_arguments(path_column, drawn_activity_column, drawn_time_frame, map_origin)
+        )
         map_figure, map_meta = record(
             ["map_figure", "map_meta"], kit.draw_map,
             lcm_log, _settings["activities"], _settings["map_type"], _settings["allow_loops"],
@@ -440,8 +489,19 @@ def _(adapter, arrangement, kit, map_arrangement, map_figure, panel, record, sta
 
 
 @app.cell(hide_code=True)
-def _(ak, arrangement, drawn_activity_column, drawn_time_frame, kit, map_meta, map_time_frame, mo, path_column, pd, show_chart, shown_map, shown_map_state, state_of):
+def _(ak, arrangement, clear_filter_button, drawn_activity_column, drawn_filter, drawn_time_frame, event_log, event_table, kit, map_log, map_meta, map_time_frame, mo, path_column, pd, show_chart, shown_map, shown_map_state, state_of):
     _chart = show_chart(mo.as_html(shown_map), artifact_id=shown_map_state, artifact_name="process_map")
+    _filter = mo.md("")
+    if drawn_filter:
+        _filter = mo.md(
+            f"**Filter:** {ak.filter_words(drawn_filter)} · {map_log[ak.CASE_ID].nunique():,} of "
+            f"{event_log[ak.CASE_ID].nunique():,} cases are kept ({len(map_log):,} events)."
+        )
+        if not ak.table_was_filtered(event_table):  # a recorded filter, kept: the table does not show it
+            _filter = mo.vstack([
+                mo.hstack([_filter, clear_filter_button], justify="start", align="center"),
+                mo.md("The table does not show this filter after a reload. Filter the table again to change it, or clear it."),
+            ])
     mo.vstack([
         mo.md(kit.describe_settings(map_meta["settings"])),
         mo.md(f"**Group events by:** `{path_column}`" if path_column != ak.CASE_ID else ""),
@@ -451,6 +511,7 @@ def _(ak, arrangement, drawn_activity_column, drawn_time_frame, kit, map_meta, m
                 (map_time_frame["start"] + pd.Timedelta(w, map_time_frame["unit"])).strftime("%Y-%m-%d %H:%M") for w in drawn_time_frame
             ) if drawn_time_frame else ""
         ),
+        _filter,
         mo.md(kit.describe_map(map_meta)),
         mo.callout(
             mo.md(f"No event of these has a value for the attribute that makes up a path, so not drawn: {', '.join(f'`{a}`' for a in map_meta['left_out'])}."),
