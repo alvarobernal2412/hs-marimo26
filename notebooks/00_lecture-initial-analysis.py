@@ -127,6 +127,7 @@ def _(mo):
     # The event logs a student can choose from: a name and the file of the log (a place in the repository), in the format it came in:
     # .xes, .csv (or .parquet). To offer other logs, change this list.
     DATASETS = {
+        "DFG example": "data/dfg-example.xes",
         "Sepsis cases": "data/SepsisCases2020EventLog.xes",
         "Purchasing example": "data/Purchasing-Example.csv",
     }
