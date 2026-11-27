@@ -17,6 +17,24 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
+GALLERY = {
+    "00_lecture-initial-analysis.py": "00 Lecture - Initial Analysis",
+    "01_assignment-initial-analysis.py": "01 Assignment - Initial Analysis",
+    "02_lecture-process-map.py": "02 Lecture - Process Map",
+    "03_assignment-process-map.py": "03 Assignment - Process Map",
+    "04_tutorial-process-map.py": "04 Tutorial - Process Map",
+}
+
+
+def test_the_gallery_lists_the_notebooks_in_course_order_under_their_titles():
+    """`marimo run notebooks` lists every notebook of the folder, by file name, under the title it sets."""
+    assert sorted(p.name for p in (ROOT / "notebooks").glob("[0-9][0-9]_*.py")) == list(GALLERY)
+    for name, title in GALLERY.items():
+        source = (ROOT / "notebooks" / name).read_text(encoding="utf8")
+        assert f'app_title="{title}"' in source, name
+        assert f'title = "{title}"' in source, name  # the opengraph title, the same
+
+
 @pytest.mark.skipif(shutil.which("marimo") is None and not Path(sys.prefix, "Scripts", "marimo.exe").exists(), reason="marimo missing")
 def test_gallery_serves_notebooks_folder():
     port = _free_port()
