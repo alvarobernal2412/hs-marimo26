@@ -47,6 +47,11 @@ TUTORIAL_HISTORY_NAME = "LC maps tutorial"
 TUTORIAL_ZIP = "histories/tutorial.zip"
 SOLUTION_ZIP = "histories/model-solution.zip"
 
+# The recorded process map tutorial that 04_tutorial-process-map.py replays (made by build/build_tutorial_history.py). It is
+# read from this zip only: there is no key and no server.
+PROCESS_MAP_TUTORIAL_ZIP = "histories/process-map-tutorial.zip"
+PROCESS_MAP_TUTORIAL_HISTORY = "Process map tutorial"
+
 _FAMILIES = {"A_": "Application", "O_": "Offer", "W_": "Workflow"}
 
 
@@ -138,6 +143,12 @@ def settings_figure(mo, name: str, width: int = 880):
 
 # --- the steps of the analysis ------------------------------------------------------------------------------------------------
 # Each is a plain function. A notebook runs it through record(), which stores its inputs and outputs as one step.
+
+
+def choose_log(name: str) -> str:
+    """The log an analyst picked, by its place in the project (such as `data/dfg-example.xes`). It does nothing: recorded as a step
+    of its own, it gives the choice a stored value, so a reviewer sees at every step which log was chosen then."""
+    return name
 
 
 def load_event_log(name: str) -> pd.DataFrame:
@@ -317,16 +328,41 @@ def _service(log: pd.DataFrame, case_notion: str):
     return service
 
 
-def draw_map(log, activities, map_type, allow_loops, show_empty, folds, case_notion, height=620, room=(10, 10, 10)):
+# How many of the most frequent traces a map stores (in its figure), for anchoring a finding on a trace. Every stored trace adds to
+# the recorded figure, and a recorded value over 500 KB is left out of the work a student saves to the course server: 500 traces
+# made a default map of the Dhana log 0.7 MB. Not an argument of `draw_map`, so the recorded calls stay as they were.
+MAP_TRACE_LIMIT = 50
+
+
+def traces_of(figure) -> list[dict]:
+    """The traces a map stores in its figure (`figure.data[0].meta["lcm"]["traces"]`), most frequent first: `name`, `sequence`,
+    `cases`, `links`, `nodes`. Empty for a figure without them (a map drawn before the traces existed, or not stored)."""
+    try:
+        meta = figure.data[0].meta
+    except (AttributeError, IndexError, TypeError):
+        return []
+    lcm_meta = meta.get("lcm") if isinstance(meta, dict) else None
+    traces = lcm_meta.get("traces") if isinstance(lcm_meta, dict) else None
+    return [t for t in traces or () if isinstance(t, dict)]
+
+
+def draw_map(
+    log, activities, map_type, allow_loops, show_empty, folds, case_notion, height=620, room=(10, 10, 10), layout="auto"
+):
     """A Linear Continuous Process Mapper map of `log`.
 
     `activities` are activity names as they are in the log (None for all). `folds` maps a fold name to the activities it
     replaces; a fold is drawn when at least one of its activities is selected. Selected activities that do not occur under the
     case notion are left out and listed in the metadata. Returns the Plotly figure and a dict that describes the map, including
-    the settings that drew it.
+    the settings that drew it, how many traces the figure stores (`trace_count`, at most `MAP_TRACE_LIMIT`; read them with
+    `traces_of(figure)`) and whether there were more (`traces_truncated`). The traces are not copied into the metadata: it is
+    recorded too, and they would double the size of the step.
 
     `room` is the free space above, below and left of the map, in pixels. The map library draws a loop as a ring that reaches
     beyond the area of the nodes, so a map with large loops needs more room than the default or its rings are cut off.
+
+    `layout` is "auto" (Plotly places the nodes) or "traces" (the most frequent trace is a straight band from the start). It is
+    passed to the library, and named in the settings, only when it is not "auto", so a map drawn as before records the same step.
     """
     service, available, cases = _service(log, case_notion)
     selected = sorted(available) if activities is None else list(activities)
@@ -350,8 +386,11 @@ def draw_map(log, activities, map_type, allow_loops, show_empty, folds, case_not
         allow_loops=allow_loops,
         visualize_empty_cases=show_empty,
         folds=folds_used,
+        **({} if layout == "auto" else {"layout": layout}),
+        trace_limit=MAP_TRACE_LIMIT,
     )
     figure.update_layout(height=height, margin=dict(l=room[2], r=10, t=room[0], b=room[1]))
+    lcm.relayout(figure)  # the positions of a "traces" layout depend on the size just set (an "auto" map stays as it is)
     settings = {
         "activities": None if activities is None else list(activities),
         "map_type": map_type,
@@ -359,7 +398,10 @@ def draw_map(log, activities, map_type, allow_loops, show_empty, folds, case_not
         "show_empty": show_empty,
         "folds": {k: list(v) for k, v in (folds or {}).items()},
         "case_notion": case_notion,
+        **({} if layout == "auto" else {"layout": layout}),
     }
+    metadata = {key: value for key, value in metadata.items() if key != "traces"}
+    metadata["trace_count"] = len(traces_of(figure))
     return figure, {**metadata, "cases": cases, "drawn": drawn, "left_out": left_out, "settings": settings}
 
 
@@ -400,9 +442,6 @@ def describe_map(meta) -> str:
 # states: the *draft* settings the controls are built from (changed by the quick-selection buttons and by "open in the
 # explorer") and the *drawn* settings (changed only by the Refresh button).
 
-FOLD_SLOTS = 3
-
-
 def activity_presets(names: list) -> dict:
     """Quick selections for the activity picker: one per family present in the log, all, and none."""
     presets = {}
@@ -415,10 +454,12 @@ def activity_presets(names: list) -> dict:
     return presets
 
 
-def map_controls(mo, names: list, settings: dict | None, case_notions: dict):
+def map_controls(mo, names: list, settings: dict | None, case_notions: dict, fold_rows: int | None = None, fold_values: list | None = None):
+    """The controls of the explorer. The fold rows start from `fold_values` (a list of (name, activities), rows the analyst already
+    typed) or from the folds of `settings`, and there are at least `fold_rows` of them (none is valid)."""
     s = normalise_settings(settings)
-    folds = list(s["folds"].items())[:FOLD_SLOTS]
-    folds += [("", [])] * (FOLD_SLOTS - len(folds))
+    folds = [(name, list(members)) for name, members in (list(s["folds"].items()) if fold_values is None else fold_values)]
+    folds += [("", [])] * ((fold_rows or 0) - len(folds))
     notion_label = {v: k for k, v in case_notions.items()}.get(s["case_notion"], next(iter(case_notions)))
     return mo.ui.dictionary(
         {
@@ -459,11 +500,40 @@ def kept_controls_of(value: dict) -> dict:
     return {key: value[key] for key in KEPT_CONTROLS if key in value}
 
 
+def kept_column_controls_of(value: dict, column: str) -> dict:
+    """What depends on the activity column and is still kept while the column stays: the selected activities and the fold rows
+    (also the ones not filled in yet), with the column they belong to."""
+    return {
+        "column": column,
+        "activities": list(value["activities"]),
+        "fold_rows": [((slot["name"] or ""), list(slot["activities"])) for slot in value.get("folds", [])],
+    }
+
+
+def build_map_controls(mo, names: list, draft: dict | None, case_notions: dict, kept: dict, column: str, adds: int):
+    """The controls of a notebook, built again from what the analyst had: the `KEPT_CONTROLS`, and, while the activity column is the
+    one they were kept for, the selected activities and the fold rows. `adds` counts the clicks on "Add fold" so far: the clicks
+    since the last build (kept in `kept["adds_seen"]`) are new, empty rows. `draft` gives the rest, and the folds of a recorded
+    history on the first build."""
+    same = kept.get("column") == column
+    new = max(adds - kept.get("adds_seen", 0), 0)
+    kept["adds_seen"] = adds
+    overlay = {key: kept[key] for key in KEPT_CONTROLS if key in kept}
+    rows = None
+    if same:
+        if "activities" in kept:
+            overlay["activities"] = kept["activities"]
+        rows = kept.get("fold_rows")
+    settings = normalise_settings({**(draft or {}), **overlay})
+    count = (len(settings["folds"]) if rows is None else len(rows)) + new
+    return map_controls(mo, names, settings, case_notions, count, rows)
+
+
 def settings_from(value: dict, names: list) -> dict:
     """The settings that the controls' value describes."""
     activities = list(value["activities"])
     folds = {}
-    for slot in value["folds"]:
+    for slot in value.get("folds", []):
         name = (slot["name"] or "").strip()
         if name and slot["activities"]:
             folds[name] = list(slot["activities"])
@@ -497,16 +567,18 @@ SHOW_QUICK_SELECTION = os.environ.get("BPM_QUICK_SELECTION", "") == "1"
 
 def controls_layout(
     mo, controls, preset_buttons, refresh_button, status, show_case_notion: bool, show_quick_selection: bool | None = None,
-    activity_column=None,
+    activity_column=None, show_folds: bool = True, add_fold=None,
 ):
     """The explorer's layout. `activity_column` is a control of the notebook (the column that gives the activities), shown in the
-    first row after the case notion."""
+    first row after the case notion. `show_folds=False` leaves out the folds; otherwise they are in an accordion, with the
+    `add_fold` button (a button of the notebook that makes the controls again with one more row) under the rows."""
     show_presets = SHOW_QUICK_SELECTION if show_quick_selection is None else show_quick_selection
     first_row = [controls["map_type"]] + ([controls["case_notion"]] if show_case_notion else [])
     first_row += [] if activity_column is None else [activity_column]
     first_row += [controls["allow_loops"], controls["show_empty"]]
     folds = mo.vstack(
-        [mo.hstack([slot["name"], slot["activities"]], justify="start", gap=1, widths=[1, 3]) for slot in controls["folds"]],
+        [mo.hstack([slot["name"], slot["activities"]], justify="start", gap=1, widths=[1, 3]) for slot in controls["folds"]]
+        + ([] if add_fold is None else [add_fold]),
         gap=0.5,
     )
     return mo.vstack(
@@ -514,7 +586,7 @@ def controls_layout(
             mo.hstack(first_row, justify="start", gap=2, align="end", wrap=True),
             *([mo.hstack([mo.md("Quick selection:"), preset_buttons], justify="start", gap=1, align="center")] if show_presets else []),
             controls["activities"],
-            mo.accordion({"Activity folding": folds}),
+            *([mo.accordion({"Activity folding": folds})] if show_folds else []),
             mo.hstack([refresh_button, status], justify="start", gap=1, align="center"),
         ],
         gap=0.75,

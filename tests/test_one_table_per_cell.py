@@ -38,7 +38,10 @@ def test_no_cell_draws_two_tables(notebook):
             assert isinstance(shown, ast.Expr), f"{notebook}, line {cell.lineno}: the table is made here but shown by another cell"
 
 
-@pytest.mark.parametrize("notebook, tables", [("01_assignment-initial-analysis.py", 14), ("03_assignment-process-map.py", 1)])
+@pytest.mark.parametrize(
+    "notebook, tables",
+    [("01_assignment-initial-analysis.py", 14), ("03_assignment-process-map.py", 1), ("04_tutorial-process-map.py", 1)],
+)
 def test_every_recorded_table_has_a_name_of_its_own_written_out(notebook, tables):
     """A table's cell is found by the `artifact_name` in it (`ak.chart_cells`), and its charts are kept by that name."""
     names = []
@@ -50,7 +53,10 @@ def test_every_recorded_table_has_a_name_of_its_own_written_out(notebook, tables
     assert len(names) == len(set(names)) == tables
 
 
-@pytest.mark.parametrize("notebook", ["00_lecture-initial-analysis.py", "01_assignment-initial-analysis.py", "03_assignment-process-map.py"])
+@pytest.mark.parametrize(
+    "notebook",
+    ["00_lecture-initial-analysis.py", "01_assignment-initial-analysis.py", "03_assignment-process-map.py", "04_tutorial-process-map.py"],
+)
 def test_the_library_that_comes_with_the_notebooks_is_found_before_the_installed_one(notebook):
     """`notebooks/vendor` goes on the path before anything of marimo-pmprov is imported (see build/vendor_library.py)."""
     source = (ROOT / "notebooks" / notebook).read_text(encoding="utf8")

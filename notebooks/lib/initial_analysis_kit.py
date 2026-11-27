@@ -29,6 +29,7 @@ CASE_ID = "case_concept_name"
 ACTIVITY = "concept_name"
 TIMESTAMP = "time_timestamp"
 LIFECYCLE = "lifecycle_transition"
+FOLDED_ACTIVITY = "folded_activity"  # the Sepsis log: Release A to E as Release (build/add_folded_activity.py)
 ACTIVITY_EXTENDED = "activity_extended"  # "<activity>_<lifecycle>": an underscore, not a comma, so that a CSV export keeps its columns
 DHANA = "data/dhana-loan-application.parquet"  # not public and not in the package: the launcher fetches it (launcher/coursefiles.py)
 MISSING_LOG = (
@@ -446,7 +447,8 @@ def path_attribute_options(log: pd.DataFrame) -> list[str]:
     groups events (more than one value, and not one value per event). The activity and the time do not."""
     options = [CASE_ID]
     for col in log.columns:
-        if col in (CASE_ID, ACTIVITY, TIMESTAMP, "folded_data") or pd.api.types.is_datetime64_any_dtype(log[col]):
+        # the folded activity is a name of an activity, not something that groups events into a path
+        if col in (CASE_ID, ACTIVITY, TIMESTAMP, "folded_data", FOLDED_ACTIVITY) or pd.api.types.is_datetime64_any_dtype(log[col]):
             continue
         if not (pd.api.types.is_string_dtype(log[col]) or pd.api.types.is_object_dtype(log[col])):
             continue
@@ -473,12 +475,18 @@ def activity_column_options(log: pd.DataFrame) -> list[str]:
     return options
 
 
-def _events_in_time_frame(log: pd.DataFrame, window) -> pd.DataFrame:
+def window_origin(frame: dict) -> dict:
+    """Where the windows of a `time_frame` count from, as plain data (a recorded argument): its `start` and `unit`. A filtered log
+    passes the origin of the whole log, whose slider the window comes from."""
+    return {"start": str(frame["start"]), "unit": frame["unit"]}
+
+
+def _events_in_time_frame(log: pd.DataFrame, window, origin: dict | None = None) -> pd.DataFrame:
     """The events of the cases (by the case id) that lie completely inside `window`, a [from, to] in the units of `time_frame`. None
-    keeps everything."""
+    keeps everything. The window counts from `origin` (`window_origin`), or from the start of `log` itself when there is none."""
     if window is None:
         return log
-    frame = time_frame(log, CASE_ID, TIMESTAMP)
+    frame = {"start": pd.Timestamp(origin["start"]), "unit": origin["unit"]} if origin else time_frame(log, CASE_ID, TIMESTAMP)
     start = frame["start"] + pd.Timedelta(window[0], frame["unit"])
     end = frame["start"] + pd.Timedelta(window[1], frame["unit"])
     return tcu.filter_cases_within_window(log, CASE_ID, TIMESTAMP, start, end)
@@ -496,20 +504,20 @@ def time_frame_window(value, stop: int) -> list[int] | None:
     return None if window == [0, stop] else window
 
 
-def cases_in_time_frame(log: pd.DataFrame, window) -> tuple[int, int]:
-    """(cases, events) that lie completely inside `window`."""
-    events = _events_in_time_frame(log, window)
+def cases_in_time_frame(log: pd.DataFrame, window, origin: dict | None = None) -> tuple[int, int]:
+    """(cases, events) that lie completely inside `window` (counted from `origin`, see `_events_in_time_frame`)."""
+    events = _events_in_time_frame(log, window, origin)
     return int(events[CASE_ID].nunique()), len(events)
 
 
 def to_lcm_log(
-    log: pd.DataFrame, case_column: str = CASE_ID, activity_column: str = ACTIVITY, window=None
+    log: pd.DataFrame, case_column: str = CASE_ID, activity_column: str = ACTIVITY, window=None, origin: dict | None = None
 ) -> pd.DataFrame:
     """The case, activity and time columns under the names the map library of `bpm_kit` reads. `case_column` is the attribute that
     makes up a path and `activity_column` the one whose values are the nodes of the map: events without a value for either are left
     out. `window` is a [from, to] in the units of `time_frame`: only the cases that lie completely inside it are kept (None keeps
-    everything)."""
-    log = _events_in_time_frame(log, window)
+    everything). It counts from `origin` (`window_origin`), the start of the whole log when `log` is a filtered one."""
+    log = _events_in_time_frame(log, window, origin)
     events = pd.DataFrame(
         {
             "case:concept:name": log[case_column],
@@ -520,16 +528,275 @@ def to_lcm_log(
     return events[events["case:concept:name"].notna() & events["concept:name"].notna()]
 
 
-def lcm_log_arguments(case_column: str, activity_column: str = ACTIVITY, window=None) -> list:
+def lcm_log_arguments(case_column: str, activity_column: str = ACTIVITY, window=None, origin: dict | None = None) -> list:
     """The arguments of `to_lcm_log` after the log, for a recorded step. Only the arguments that differ from their defaults are
     included (a trailing one at its default is left out), so that the recorded step of an earlier version of the notebook stays equal
-    to the step recorded now, and a history that is opened again does not record it (and the map) a second time."""
+    to the step recorded now, and a history that is opened again does not record it (and the map) a second time. `origin` only
+    matters for a window."""
+    if window is not None and origin is not None:
+        return [case_column, activity_column, window, origin]
     arguments = [case_column, activity_column, window]
     if window is None:
         arguments.pop()
         if activity_column == ACTIVITY:
             arguments.pop()
     return arguments
+
+
+# --- the filter on the log of the maps ------------------------------------------------------------------------------------------
+# The analyst filters the event log in its table (`mo.ui.table`, the menu of a column). A filter is plain data: a list of conditions
+# (`{"type": "condition", "column_id", "operator", "value", "negate"}`, a nested `{"type": "group", ...}` kept as it is), joined by
+# "and". The map uses it when Refresh visualization is pressed: the filter is part of the drawn settings, a recorded step
+# (`filter_log`, as JSON text) in `03`, and a notebook that is opened again draws its map with it (`last_filter`).
+
+
+def _marimo_filters() -> dict:
+    """The parts of marimo that filter a table: marimo 0.25.2 internals (private names), kept in this one place. A test imports them
+    all (`tests/test_log_filter.py`), so a marimo that renamed one fails there and not in a student's notebook.
+
+    - `mo.ui.table` keeps the column filters of the last request of its page in `table._current_filters` (a `FilterGroup` of
+      `FilterCondition`s), set by its `_search`;
+    - it applies them with `_filter_valid_columns` (drops conditions on columns it does not have) and `apply_transforms_to_df`
+      with a `FilterRowsTransform` that keeps the rows, on the frame of `get_table_manager(data)`."""
+    from marimo._plugins.ui._impl.dataframes.transforms.apply import apply_transforms_to_df
+    from marimo._plugins.ui._impl.dataframes.transforms.types import (
+        FilterCondition, FilterGroup, FilterRowsTransform, TransformType,
+    )
+    from marimo._plugins.ui._impl.table import _filter_valid_columns
+    from marimo._plugins.ui._impl.tables.utils import get_table_manager
+    from marimo._utils.narwhals_utils import unwrap_narwhals_dataframe
+
+    return {
+        "FilterCondition": FilterCondition, "FilterGroup": FilterGroup, "FilterRowsTransform": FilterRowsTransform,
+        "TransformType": TransformType, "apply_transforms_to_df": apply_transforms_to_df,
+        "filter_valid_columns": _filter_valid_columns, "get_table_manager": get_table_manager,
+        "unwrap": unwrap_narwhals_dataframe,
+    }
+
+
+def _plain(value):
+    """marimo's filter objects as plain data: dicts and lists."""
+    import dataclasses
+    from enum import Enum
+
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return {f.name: _plain(getattr(value, f.name)) for f in dataclasses.fields(value)}
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, (list, tuple)):
+        return [_plain(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _plain(item) for key, item in value.items()}
+    return value
+
+
+def table_filters(table) -> list[dict]:
+    """The column filters a student set in `table` (a `mo.ui.table`), as plain data: the conditions of its filter group, joined by
+    "and" (a group that is not a plain "and" is kept whole, as one item); [] when there are none. The text of the search box does
+    not count: it searches every column, and a map is drawn from conditions on columns only."""
+    group = getattr(table, "_current_filters", None)
+    children = list(getattr(group, "children", None) or [])
+    if not children:
+        return []
+    if getattr(group, "operator", "and") == "and" and not getattr(group, "negate", False):
+        return [_plain(child) for child in children]
+    return [_plain(group)]
+
+
+def _filters_from(filters) -> list[dict]:
+    """A list of conditions, from the list itself or its JSON text (`filter_text`). Anything else is no filter."""
+    if isinstance(filters, str):
+        try:
+            filters = json.loads(filters)
+        except ValueError:
+            return []
+    return filters if isinstance(filters, list) and all(isinstance(f, dict) for f in filters) else []
+
+
+def _filter_group(filters: list[dict]):
+    """The conditions as marimo's `FilterGroup` ("and" of them)."""
+    m = _marimo_filters()
+
+    def build(item: dict):
+        if item.get("type") == "group":
+            return m["FilterGroup"](
+                children=tuple(build(child) for child in item.get("children") or []),
+                operator=item.get("operator", "and"), negate=bool(item.get("negate")),
+            )
+        value = item.get("value")
+        return m["FilterCondition"](
+            column_id=item["column_id"], operator=item["operator"],
+            value=list(value) if isinstance(value, (list, tuple)) else value, negate=bool(item.get("negate")),
+        )
+
+    return m["FilterGroup"](children=tuple(build(f) for f in filters), operator="and", negate=False)
+
+
+def case_filter(cases: list[str], column: str = CASE_ID) -> list[dict]:
+    """The filter that keeps exactly the events of these cases (the values of `column`): what a student sets with the column menu of
+    the table, "is one of" (`in`)."""
+    return [{"type": "condition", "column_id": column, "operator": "in", "value": list(cases), "negate": False}]
+
+
+def filter_text(filters: list[dict]) -> str:
+    """The filter as JSON text: how a `filter_log` step records it. The tracker keeps a list or a dict argument only a few levels deep
+    and 50 items long, but a text argument whole."""
+    return json.dumps(list(filters), sort_keys=True, ensure_ascii=False)
+
+
+def filter_log(log: pd.DataFrame, filters: list[dict] | str) -> pd.DataFrame:
+    """The rows of `log` the filter keeps (the list, or its JSON text as a step records it), as the table keeps them: through marimo's
+    own filter code (`_marimo_filters`). A condition on a column the log does not have is dropped, as the table drops it. Without a
+    filter it is `log` itself."""
+    filters = _filters_from(filters)
+    if not filters:
+        return log
+    m = _marimo_filters()
+    manager = m["get_table_manager"](log)
+    group = m["filter_valid_columns"](_filter_group(filters), {name: dtype for name, (dtype, _) in manager.get_field_types()})
+    if not group.children:
+        return log
+    keep = m["FilterRowsTransform"](type=m["TransformType"].FILTER_ROWS, where=group, operation="keep_rows")
+    result = m["unwrap"](m["apply_transforms_to_df"](manager.data, keep))
+    return result if isinstance(result, pd.DataFrame) else pd.DataFrame(result)
+
+
+_OPERATOR_WORDS = {
+    "in": "is one of", "not_in": "is not one of", "equals": "is", "does_not_equal": "is not", "contains": "contains",
+    "regex": "matches", "starts_with": "starts with", "ends_with": "ends with", "is_null": "has no value",
+    "is_not_null": "has a value", "is_empty": "is empty", "is_true": "is true", "is_false": "is false", "==": "=", "!=": "is not",
+    "between": "is between",
+}
+
+
+def _value_words(value) -> str:
+    if isinstance(value, dict) and {"min", "max"} <= set(value):
+        return f"{value['min']} and {value['max']}"
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(v) for v in value)
+    return str(value)
+
+
+def _where_words(where: dict, nested: bool = False) -> str:
+    if where.get("type") == "group":
+        text = f" {where.get('operator', 'and')} ".join(_where_words(child, True) for child in where.get("children") or [])
+        if where.get("negate"):
+            return f"not ({text})"
+        return f"({text})" if nested and len(where.get("children") or []) > 1 else text
+    operator = where.get("operator", "")
+    text = f"{where.get('column_id')} {_OPERATOR_WORDS.get(operator, operator)}"
+    if operator not in ("is_null", "is_not_null", "is_empty", "is_true", "is_false"):
+        text += f" {_value_words(where.get('value'))}"
+    return f"not ({text})" if where.get("negate") else text
+
+
+def filter_words(filters) -> str:
+    """The filter (the list, or its JSON text) in words, for the line above the map: "case_concept_name is one of c3, c1",
+    conditions joined by "and" (a nested group in parentheses, with its own "and" or "or"). "" without a filter."""
+    return " and ".join(_where_words(f, True) for f in _filters_from(filters))
+
+
+def watch_filters(table):
+    """`table` (a `mo.ui.table`), marked as filtered once a request of its page carries column filters (`table_was_filtered`). The
+    browser's filters of a table are gone after a reload and cannot be set again from Python: until the student filters the table in
+    this session, the notebook keeps the filter it drew last (a recorded one) instead of taking the empty filters of the table.
+
+    The page calls the table's "search" function, which marimo registers under the table's id; it is wrapped once. Outside a running
+    notebook there is no such function and the table is never marked."""
+    table._filtered_here = False
+    try:
+        from marimo._runtime.context import get_context
+
+        function = get_context().function_registry.get_function(table._id, "search")
+    except Exception:
+        function = None
+    if function is not None and not getattr(function, "_watched", False):
+        search = function.function
+
+        def watched(args):
+            if getattr(getattr(args, "filters", None), "children", None):
+                table._filtered_here = True
+            return search(args)
+
+        function.function = watched
+        function._watched = True
+    return table
+
+
+def table_was_filtered(table) -> bool:
+    """Whether the student has filtered `table` in this session (see `watch_filters`); it stays true after the filters are cleared."""
+    return bool(getattr(table, "_filtered_here", False))
+
+
+def filter_problem(log: pd.DataFrame, filtered: pd.DataFrame, needed=()) -> str | None:
+    """What keeps a map from being drawn from `filtered` (the log after the filter), in words; None when nothing does: no event is
+    left, or the case, activity or time column (or one of `needed`) is missing, or the time is no longer a time."""
+    if len(filtered) == 0:
+        return "The filter keeps no event of the log. Change or clear it and press Refresh visualization."
+    for column in dict.fromkeys([CASE_ID, ACTIVITY, TIMESTAMP, *needed]):
+        if column in log.columns and column not in filtered.columns:
+            return f"The filter removes the column `{column}`, which the map needs."
+    if TIMESTAMP in filtered.columns and not _is_timestamp(filtered[TIMESTAMP]):
+        return f"The filter changes the column `{TIMESTAMP}` so that it is no longer a time."
+    return None
+
+
+def last_filter(adapter) -> list[dict]:
+    """The filter of the latest `filter_log` step of the recorded history; [] when there is none (or it is damaged)."""
+    return _filters_from((params_at(adapter, None, "filter_log") or {}).get("filters"))
+
+
+def recorded_filter_at(adapter, state_id: str | None) -> list[dict]:
+    """The filter a reviewer sees at the recorded step `state_id`: that of the last `filter_log` step at or before it, and none when
+    a log was chosen or loaded after that step (`choose_log`, `load_log`: the filter was for another log) or when `state_id` is no
+    step of the history (the start of a replay)."""
+    found = None
+    for node_id, node in adapter.get_tree().nodes.items():
+        if node.operation.name in ("choose_log", "load_log"):
+            found = None
+        elif node.operation.name == "filter_log":
+            found = node.params.get("filters")
+        if node_id == state_id:
+            return _filters_from(found)
+    return []
+
+
+def made_before_choice(adapter, state_id: str | None, step_name: str) -> bool:
+    """Whether what the last `step_name` step made, at or before the recorded step `state_id`, was made for a log chosen earlier:
+    a `choose_log` step comes after it. A reviewer is then not shown it with the log chosen now."""
+    made = chosen = None
+    for position, (node_id, node) in enumerate(adapter.get_tree().nodes.items()):
+        if node.operation.name == step_name:
+            made = position
+        elif node.operation.name == "choose_log":
+            chosen = position
+        if node_id == state_id:
+            return made is not None and chosen is not None and chosen > made
+    return False
+
+
+def load_log(path) -> pd.DataFrame:
+    """A course log as the process map notebooks read it: in its own format (`read_log`), with the notebooks' column names
+    (`normalise_log`)."""
+    return normalise_log(read_log(path))
+
+
+def record_filter(record, adapter, log: pd.DataFrame, filters: list[dict], memo: dict | None = None) -> tuple[pd.DataFrame, bool]:
+    """(the log the maps are drawn from, whether that is a recorded step). The step records the filter as JSON text (`filter_text`).
+    No filter is no step, so a history without a filter replays as it was; once the history has a filter step, removing the filter is
+    a step too (`filter_log` with none), so a notebook that is opened again does not bring the removed filter back.
+
+    `memo` (a dict the notebook keeps) holds the last result: the same filter again (every Refresh asks for it) is not recorded again."""
+    text = filter_text(filters)
+    if memo is not None and memo.get("text") == text:
+        return memo["result"]
+    if not filters and step_state_id(adapter, None, "filter_log") is None:
+        result = (log, False)
+    else:
+        result = (record(["filtered_log"], filter_log, log, text), True)
+    if memo is not None:
+        memo.update(text=text, result=result)
+    return result
 
 
 # --- saving to the course server, one notebook among several ------------------------------------------------------------------------
