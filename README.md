@@ -3,8 +3,8 @@
 The course notebooks as a package students run on their own laptop: no Docker, no install, no terminal.
 
 - `notebooks/`: `00_lecture-initial-analysis.py`, `01_assignment-initial-analysis.py`, `02_lecture-process-map.py` (maps of the
-  Sepsis log) and `03_assignment-process-map.py`, and what they share (`bpm_kit.py`, `lib/`, `data/`). The two lecture notebooks
-  record and save nothing and ask for no key. `marimo run` serves them as a gallery of apps, under the title each one sets
+  Sepsis log), `03_assignment-process-map.py` and `04_tutorial-process-map.py` (a recorded analysis to replay), and what they share
+  (`bpm_kit.py`, `lib/`, `data/`, `histories/`). The two lecture notebooks and the tutorial record and save nothing and ask for no key. `marimo run` serves them as a gallery of apps, under the title each one sets
   (`app_title`). The two assignment notebooks read a log that is not public (see "The log that is not public").
 - `launcher/`: `Start.bat` / `Start.command` (at the package root: unpack the runtime on the first start, then run `start.py`),
   `Change-my-answer.bat` / `.command` (the same with `--consent`), `Remove-my-data.bat` / `.command` (the same with `--remove-data`), `removal.py` (the page that removes one assignment's saved work from the course server, keeping a copy for the teachers; refuses while the notebooks run), `start.py` (update, ask for consent, fetch the log that is not public, start marimo, open the browser),
@@ -32,7 +32,7 @@ The course notebooks as a package students run on their own laptop: no Docker, n
 - `Uninstall.bat` / `Uninstall.command` remove the tools, `~/.hs-marimo26` (consent answer, course code and work kept without a key) and the temporary
   session copies, after showing the impact and asking for `YES` (pure batch/bash: the runtime's Python is part of what is removed).
   They never touch the course server's copy of a student's work, the browser's stored key, or the folder the zip was unpacked to.
-- The notebooks are numbered (`00_` to `03_`) so the gallery lists them in course order. The notebook ids the course server knows
+- The notebooks are numbered (`00_` to `04_`) so the gallery lists them in course order. The notebook ids the course server knows
   them by (`initial-analysis`, `map-explorer` in `lib/initial_analysis_kit.py`) are unchanged: they name students' saved work.
 - `notebooks/vendor/provenance_widget` is a copy of marimo-pmprov that the notebooks import before the installed one (they put
   `vendor/` first on the path). A start only brings `notebooks/` up to date, so this is how a new version of marimo-pmprov
@@ -65,6 +65,30 @@ The course notebooks as a package students run on their own laptop: no Docker, n
 - `.github/workflows/release.yml`: on a `v*` tag, builds the three student zips and `notebooks.zip` and drafts the release.
 - Every notebook shows the version of the notebooks (`ak.notebooks_version`, read from the `version.json` beside `notebooks/`, or "development copy") and a "Stop the app" button at the top right (`ak.app_bar`, `ak.stop_confirmation`, `ak.stop_app`). They live in the notebooks, so they ship as a MINOR; the line in the terminal about an update waits for the next MAJOR.
 - The process maps (`02` and `03`) let the student choose the activity column and a time frame, and the event log has a `lifecycle_state` column ("on" or "off", `ak.add_lifecycle_state`) and the case log a `duration` column (`ak.to_lcm_log`, `ak.cases_in_time_frame`, `ak.build_case_log`).
+  The map can be drawn from a part of the log: the student filters the event-log table with the menu of a column (`mo.ui.table`'s own
+  column filters), and Refresh visualization takes those filters into the drawn settings (`ak.table_filters`), like every other
+  setting. A filter is plain data (a list of conditions, `ak.case_filter` makes one), applied with marimo's own table filter code
+  (`ak.filter_log`; the private marimo 0.25.2 names it uses are in `ak._marimo_filters`, and a test fails if one disappears). The
+  line above the map names it (`ak.filter_words`). The controls stay built from the whole log, and a time frame counts from the
+  start of the whole log (`ak.window_origin`). In `03` the filter is a recorded step (`filter_log`, as JSON text: the tracker keeps a
+  nested list argument only a few levels deep), once per filter, and a notebook that is opened again draws its map with it
+  (`ak.last_filter`); no filter records no step, so earlier histories replay as they were. A browser cannot show a filter in the
+  table again after a reload, so until the table is filtered in that session (`ak.watch_filters`, which wraps the table's search
+  function in the kernel) Refresh keeps the recorded filter, and a "Clear filter" button next to its line draws the whole log.
+  A filter in the table runs no cell, so the "settings changed" mark next to Refresh does not see it; the line under the table says
+  that the map uses the filter on Refresh.
+- Folds are optional: the explorer starts with no fold row, and "Add fold" adds one (`kit.build_map_controls`); the rows and the
+  selected activities stay while the activity column stays. The Sepsis log has a `folded_activity` column (`Release A` to
+  `Release E` as `Release`, every other activity as it is), written into the `.xes` by `build/add_folded_activity.py`.
+- `04_tutorial-process-map.py` replays a recorded analysis that follows slides 34 to 39 of the lecture on behavior: the DFG example log
+  `data/dfg-example.xes` ({A, AKLZ, AKLZ, ALKZ}) filtered case by case and drawn in the three abstractions, then the admin
+  subprocess of the Sepsis log. The same toy log is offered as "DFG example" in the picker of `00` (with "Sepsis cases" and
+  "Purchasing example"). Its findings point at traces, nodes and links of the maps, which the side panel highlights when a
+  student steps to them. Its page has the texts of `03`, which it replays; the "Filter:" line above a map names the filter that map
+  was drawn from, the table shows the log as filtered at the current step. The analysis is `notebooks/histories/process-map-tutorial.zip`, made by
+  `python build/build_tutorial_history.py` with the steps of `03` (and `kit.choose_log`, so the chosen log is a step); run it again
+  after a change to those steps or to the logs, and commit the zip. Its maps are drawn with `layout="traces"` (`kit.draw_map`), so the
+  most frequent trace is a straight band from the start; the other notebooks keep Plotly's placement.
 
 ## Releases
 
@@ -76,6 +100,10 @@ A release holds the three student zips (`hs-marimo26-v<version>-windows-x64.zip`
 |---|---|---|
 | MAJOR | the package changes: Python, libraries (`build/requirements.txt`), the launcher | paste the install line again (a page in their browser tells them, with the line to copy) |
 | MINOR or PATCH | only `notebooks/` changes: notebooks added, changed or removed, small data files added | nothing: it updates on the next start |
+
+`notebooks.zip` leaves out every `.xes` log (`make_notebooks_zip.py`): a new or changed `.xes` (the DFG example log, the Sepsis log with its
+`folded_activity` column) reaches students only with a new package, a MAJOR. The process map tutorial is such a MAJOR: it needs `linear-continuous-process-mapper>=0.2.0` (the traces of a map,
+`layout="traces"`) and `marimo-pmprov>=0.17.0` (anchors on a trace), and it adds and changes `.xes` logs.
 
 Both the package and `notebooks.zip` carry a `manifest.json`: the notebook files the release ships and a hash of
 `build/requirements.txt`. With it a launcher removes a notebook that a release dropped (never a file the student added), and does
